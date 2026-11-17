@@ -1126,7 +1126,8 @@ function b2bRow(ctx: CanvasRenderingContext2D, p: Params, S: number, gap: number
   const badge = measureBlocks(ctx, ["B2B"], STYLE_TINY, S, family, STYLE_TINY.fs * S)[0];
   const nameRow = layoutRow(ctx, names, STYLE_BIG, S, gap, maxW - 2 * (badge.w + gap), family);
   if (!nameRow) return null;
-  return rowOf([badge, ...nameRow.blocks], gap, (badge.w + gap) / 2);
+  // shifted left by half the badge: as if an invisible twin sat on the right
+  return rowOf([badge, ...nameRow.blocks], gap, -(badge.w + gap) / 2);
 }
 
 // ---------- logo ----------
