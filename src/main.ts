@@ -380,7 +380,7 @@ const PRESETS: Record<number, Partial<Params>> = {
   4: {
     layout: "row",
     rowsTop: 0,
-    rowsBottom: 1,
+    rowsBottom: 2,
     title: "App TMB26",
     day: "",
     timeStart: "",

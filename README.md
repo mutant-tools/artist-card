@@ -36,9 +36,8 @@ Left column:
   examples from the Figma sheet, photo included: 1 Reveal (the two-stage
   construction), 2 Infos Pratiques (side blocks, 24 px units, title at the
   top, sentence at the bottom), 3 Full blocks (the stripes held open
-  around the photo, logo at the bottom), 4 App TMB26 (one strip at the
-  bottom, a strip being a 36 px
-  row in the top colours over one in the bottom colours). A preset resets
+  around the photo, logo at the bottom), 4 App TMB26 (two strip rows at the
+  bottom, 36 px each, top colours over bottom colours). A preset resets
   everything but the format and loops; edit from there. The example photos
   live in `public/presets/` (licensed, not in the repo, like the fonts).
 - **Title, Day, Time, Artist, Stage, Info** every word becomes its own

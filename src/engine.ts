@@ -505,14 +505,14 @@ export function buildScene(p: Params): Scene {
   const oneStage = layout !== "reveal";
   // Side blocks use the design's 24 px unit (at 1080); the others 45 px.
   const unit = (Math.max(6, p.unitPx) / 1080) * S;
-  // Block row: thin strips at the top and bottom edges, as many as the row
-  // sliders say (none at all for "no blocks"). A strip is the design's
-  // pair: a row in the top colours over a row in the bottom colours, 36 px
-  // each at 1080.
+  // Block row: thin strip rows at the top and bottom edges, as many as the
+  // row sliders say (none at all for "no blocks"), 36 px each at 1080,
+  // alternating top colours / bottom colours from the edge inwards: the
+  // design's strip is two rows, top colours over bottom colours.
   const stripH = (Math.max(6, p.stripPx) / 1080) * S;
   const strips = layout === "row";
-  const nTop = layout === "none" ? 0 : strips ? 2 * clampInt(p.rowsTop, 0, 4) : clampInt(p.rowsTop, 1, 24);
-  const nBot = layout === "none" ? 0 : strips ? 2 * clampInt(p.rowsBottom, 0, 4) : clampInt(p.rowsBottom, 1, 24);
+  const nTop = layout === "none" ? 0 : strips ? clampInt(p.rowsTop, 0, 8) : clampInt(p.rowsTop, 1, 24);
+  const nBot = layout === "none" ? 0 : strips ? clampInt(p.rowsBottom, 0, 8) : clampInt(p.rowsBottom, 1, 24);
   const n = nTop + nBot;
   const rows: RowSpec[] = [];
   for (let i = 0; i < n; i++) {
@@ -520,7 +520,7 @@ export function buildScene(p: Params): Scene {
     let y0: number;
     let y1: number;
     if (strips) {
-      // rows come in pairs (top colours, then bottom colours) from each edge
+      // rows alternate (top colours, then bottom colours) from each edge
       const atTop = i < nTop;
       const j = atTop ? i : i - nTop;
       half = j % 2 === 0 ? "top" : "bottom";
