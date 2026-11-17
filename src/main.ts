@@ -197,6 +197,7 @@ function syncTime() {
     tickEls[idx]?.classList.add("on");
     activeTick = idx;
   }
+  syncWaveHead();
 }
 function scrubAt(clientX: number) {
   const r = ticksEl.getBoundingClientRect();
@@ -993,6 +994,7 @@ function buildWave() {
       waveTicksEl.appendChild(el);
       waveBars.push(el);
     }
+    waveHead = -1;
   }
   syncWave();
 }
@@ -1001,9 +1003,20 @@ function syncWave() {
   const peaks = windowPeaks(audio, audioStart, exportLength(), waveBars.length);
   waveBars.forEach((el, i) => {
     el.style.height = `${Math.round(4 + 24 * peaks[i])}px`;
-    el.classList.add("on");
   });
   waveTimeEl.textContent = fmtTime(audioStart);
+  syncWaveHead();
+}
+// the playhead on the music strip: the bar under the current time, like the timeline's tick
+let waveHead = -1;
+function syncWaveHead() {
+  if (!audio || !waveBars.length) return;
+  const total = exportLength();
+  const idx = total > 0 ? clamp(Math.floor((time / total) * waveBars.length), 0, waveBars.length - 1) : 0;
+  if (idx === waveHead) return;
+  waveBars[waveHead]?.classList.remove("on");
+  waveBars[idx]?.classList.add("on");
+  waveHead = idx;
 }
 function setAudioStart(s: number) {
   if (!audio) return;

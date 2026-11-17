@@ -303,7 +303,6 @@ input[type="text"].center { text-align: center; }
 .timeline.wave .frame { align-items: center; height: 28px; }
 .timeline.wave .ticks { height: 28px; align-items: center; }
 .timeline.wave .ticks > i { height: 4px; min-height: 4px; }
-.timeline.wave .ticks > i.on { background: var(--text); }
 
 /* ---------- COLOUR PICKER ---------- */
 .color-popover {
