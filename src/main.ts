@@ -57,7 +57,7 @@ let playing = false;
 
 let raf = 0;
 function draw() {
-  layout = render(ctx, params, scene, time, 1, image);
+  layout = render(ctx, params, scene, time % scene.tl.total, 1, image);
   drawFalloffHandle();
 }
 function schedule() {
@@ -159,7 +159,7 @@ function readHash(): boolean {
 }
 function rebuild() {
   scene = buildScene(params);
-  if (time > scene.tl.total) time = 0;
+  if (time > exportLength()) time = 0;
   buildTicks();
   syncTime();
   if (audio) setAudioStart(audioStart);
@@ -174,7 +174,7 @@ let ticksWidth = 0; // css px available for the tick strip
 function buildTicks() {
   // one tick per 1/15 s, fewer when the strip is too narrow (3 px ticks,
   // at least 2.5 px apart) so the timeline always fits under the card
-  const wanted = Math.max(2, Math.round(scene.tl.total * TICKS_PER_SECOND));
+  const wanted = Math.max(2, Math.round(exportLength() * TICKS_PER_SECOND));
   const fit = ticksWidth > 0 ? Math.floor((ticksWidth + 2.5) / 5.5) : wanted;
   const n = Math.max(2, Math.min(wanted, fit));
   if (n === tickEls.length) return;
@@ -188,7 +188,7 @@ function buildTicks() {
   activeTick = -1;
 }
 function syncTime() {
-  const total = scene.tl.total;
+  const total = exportLength();
   frameBtn.textContent = String(Math.round(time * FPS));
   const n = tickEls.length;
   const idx = total > 0 ? clamp(Math.floor((time / total) * n), 0, n - 1) : 0;
@@ -201,7 +201,7 @@ function syncTime() {
 function scrubAt(clientX: number) {
   const r = ticksEl.getBoundingClientRect();
   if (r.width <= 0) return;
-  setTime(clamp((clientX - r.left) / r.width, 0, 1) * scene.tl.total);
+  setTime(clamp((clientX - r.left) / r.width, 0, 1) * exportLength());
 }
 let scrubbing = false;
 ticksEl.addEventListener("pointerdown", (e) => {
@@ -233,13 +233,15 @@ let playOffset = 0;
 let playLoops = 0;
 function tick(now: number) {
   if (!playing) return;
-  const total = scene.tl.total;
+  // the timeline spans the whole export (the loop times Loops); the music
+  // starts over with it
+  const total = exportLength();
   const elapsed = (now - playStart) / 1000 + playOffset;
   time = total > 0 ? elapsed % total : 0;
   const loops = total > 0 ? Math.floor(elapsed / total) : 0;
   if (loops !== playLoops) {
     playLoops = loops;
-    if (audio && loops % Math.max(1, params.loops) === 0) playAudio(audio, audioStart + time);
+    if (audio) playAudio(audio, audioStart + time);
   }
   syncTime();
   draw();
@@ -262,7 +264,7 @@ function setPlaying(p: boolean) {
 }
 function setTime(t: number) {
   if (playing) setPlaying(false);
-  time = clamp(t, 0, scene.tl.total);
+  time = clamp(t, 0, exportLength());
   syncTime();
   schedule();
 }
@@ -356,8 +358,7 @@ const setLogoUI = bindSeg<LogoPos>("logoSeg", "logo", (v) => {
 });
 const setLoopsUI = bindSeg<string>("loopsSeg", "loops", (v) => {
   params.loops = Number(v);
-  if (audio) setAudioStart(audioStart);
-  syncHash();
+  rebuild();
 });
 /** The MP4's length: the loop times the Loops setting. */
 function exportLength(): number {
@@ -1274,7 +1275,7 @@ exportPngBtn.addEventListener("click", async () => {
   const snap = snapshot();
   exportPngBtn.disabled = true;
   try {
-    await exportPng(snap.p, snap.scene, time, EXPORT_SCALE, snap.image);
+    await exportPng(snap.p, snap.scene, time % snap.scene.tl.total, EXPORT_SCALE, snap.image);
   } catch (err) {
     console.error("[export]", err);
     alert("PNG export failed; check the console.");
@@ -1356,7 +1357,7 @@ window.artistCard = {
       img.src = url;
     }),
   render: draw,
-  total: () => scene.tl.total,
+  total: () => exportLength(),
   layout: () => layout,
 };
 
