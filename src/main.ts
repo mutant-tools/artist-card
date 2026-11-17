@@ -581,6 +581,17 @@ function bindText(id: string, apply: (v: string) => void) {
   });
   return el;
 }
+// Title and Info grow with their text: one line is a normal 32 px field,
+// two lines the design's 46 px, and 11 px for every further line.
+function autosize(el: HTMLInputElement) {
+  const btn = el.parentElement?.querySelector<HTMLElement>(".btn.tall");
+  if (btn) btn.style.height = "";
+  el.style.height = "auto";
+  const lines = Math.max(1, Math.round((el.scrollHeight - 12) / 11));
+  const h = lines <= 1 ? 32 : 24 + 11 * lines;
+  el.style.height = `${h}px`;
+  if (btn) btn.style.height = `${h}px`;
+}
 const titleEl = bindText("titleText", (v) => (params.title = v));
 const dayEl = bindText("dayText", (v) => (params.day = v));
 const timeStartEl = bindText("timeStartText", (v) => (params.timeStart = v));
@@ -620,6 +631,7 @@ $<HTMLButtonElement>("artist2RemoveBtn").addEventListener("click", () => {
 });
 // text changes can change the block count, which sets the loop length
 for (const el of [titleEl, dayEl, timeStartEl, timeEndEl, artistEl, stageTextEl, artist2El, infoEl]) el.addEventListener("input", () => rebuild());
+for (const el of [titleEl, infoEl]) el.addEventListener("input", () => autosize(el));
 document.fonts.addEventListener("loadingdone", () => schedule());
 
 // ---------- colours ----------
@@ -1366,9 +1378,11 @@ function syncUI() {
   infoSizeBtn.textContent = params.infoSize.toUpperCase();
   artist2El.value = params.artist2;
   infoEl.value = params.info;
+  autosize(infoEl);
   showArtist2(!!params.artist2 || artist2Shown);
   for (const def of stepDefs) syncStep(def.key);
   titleEl.value = params.title;
+  autosize(titleEl);
   dayEl.value = params.day;
   timeStartEl.value = params.timeStart;
   timeEndEl.value = params.timeEnd;
