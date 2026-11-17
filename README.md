@@ -70,6 +70,10 @@ Left column:
   stack height are in the link. Shift while dragging the falloff handle
   snaps it to the centre lines; the handle only shows in the presets that
   have a hole (Reveal, Side blocks).
+- **Text time** seconds one label block takes to come in or go (1 s in the
+  design). Settings that cannot change the picture in the current layout
+  are hidden: a one-stage poster has no opening time, the block row has no
+  hole, no blocks means no stripe settings at all.
 - **Hold closed, Opening time, Opening %, Hold open** the loop is closed
   hold, open, open hold, close, then the seam labels fold back in (every
   label block opens and closes in 1 s, one row stagger apart, on a soft
@@ -81,14 +85,16 @@ Left column:
   falloff, and while it is selected scroll over the card to resize the
   circle (Escape deselects). **Faith %** 100 follows the falloff, 0 is
   complete chaos: a random width per row and side.
-- **Rows top / bottom** row counts.
+- **Rows top / bottom** row counts; **Strip height** (block row only) the
+  height of one strip row in px at 1080.
 - **Rows stagger** seconds between rows; **Irregularity %** extra blocks
   left standing per row and side, more towards the outer rows; **Shape
   seed**; **Top / Bottom / Centre** stagger order (closing runs in reverse).
 
 Right column:
 
-- **Block width** widest edge block left in an open row, in units (one unit
+- **Block size** the stripe unit in px at 1080 (45 in the reveal, 24 for the
+  side blocks). **Block width** widest edge block left in an open row, in units (one unit
   is the card's short side / 24); the edge blocks breathe between that and
   two units less, never resting. **Block travel** largest sideways step of a
   row's pattern in units. **Block seed**.

@@ -338,6 +338,7 @@ const PRESETS: Record<number, Partial<Params>> = {
     rowsTop: 4,
     rowsBottom: 4,
     blockWidth: 3,
+    unitPx: 24,
     title: "Infos\nPratiques",
     day: "",
     timeStart: "",
@@ -459,6 +460,9 @@ const setOrderUI = bindSeg<StaggerOrder>("orderSeg", "order", (v) => {
 // ---------- steppers ----------
 
 type NumKey =
+  | "unitPx"
+  | "stripPx"
+  | "labelTime"
   | "holdClosed"
   | "duration"
   | "opening"
@@ -495,11 +499,14 @@ const stepDefs: StepDef[] = [
   { key: "vignette", label: "Vignette %", min: 0, max: 100, step: 5, decimals: 0, container: "timingGroup", title: "How much the hole follows the falloff circle on the preview: 0 = two vertical lines, 100 = the circle" },
   { key: "faith", label: "Faith %", min: 0, max: 100, step: 5, decimals: 0, container: "timingGroup", title: "100 = the hole follows the falloff, 0 = complete chaos (a random width per row and side)" },
   { key: "holdOpen", label: "Hold open", min: 0, max: 30, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup" },
+  { key: "labelTime", label: "Text time", min: 0.3, max: 3, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup", title: "How long one label block takes to come in or go" },
   { key: "rowsTop", label: "Rows top", min: 0, max: 24, step: 1, decimals: 0, container: "rowsGroup" },
   { key: "rowsBottom", label: "Rows bottom", min: 0, max: 24, step: 1, decimals: 0, container: "rowsGroup" },
+  { key: "stripPx", label: "Strip height", min: 12, max: 120, step: 6, decimals: 0, container: "rowsGroup", title: "Block row: height of one strip row in px at 1080" },
   { key: "stagger", label: "Rows stagger", min: 0, max: 1, step: 0.05, decimals: 2, container: "shapeGroup", title: "Seconds between rows; the closing runs in reverse order" },
   { key: "irregularity", label: "Irregularity %", min: 0, max: 100, step: 5, decimals: 0, container: "shapeGroup", title: "Extra blocks left standing per row and side, more towards the outer rows" },
   { key: "shapeSeed", label: "Shape seed", min: 0, max: 999999, step: 1, decimals: 0, container: "shapeGroup" },
+  { key: "unitPx", label: "Block size", min: 12, max: 90, step: 3, decimals: 0, container: "blocksGroup", title: "The stripe unit in px at 1080: 45 in the reveal, 24 for the side blocks" },
   { key: "blockWidth", label: "Block width", min: 1, max: 8, step: 1, decimals: 0, container: "blocksGroup", title: "Widest edge block in an open row, in units (one unit = card width / 24); the blocks breathe two units below that" },
   { key: "blockTravel", label: "Block travel", min: 0, max: 12, step: 1, decimals: 0, container: "blocksGroup", title: "Largest sideways step of a row's pattern, in units" },
   { key: "blockSeed", label: "Block seed", min: 0, max: 999999, step: 1, decimals: 0, container: "blocksGroup" },
@@ -509,6 +516,7 @@ const stepDefs: StepDef[] = [
 ];
 const numParams = params as unknown as Record<NumKey, number>;
 const stepInputs: Partial<Record<NumKey, HTMLInputElement>> = {};
+const stepRows: Record<string, HTMLElement> = {};
 
 function fmtStep(def: StepDef, v: number) {
   return `${v.toFixed(def.decimals)}${def.suffix ?? ""}`;
@@ -531,6 +539,7 @@ function renderStep(def: StepDef) {
     </div>`;
   const input = row.querySelector("input") as HTMLInputElement;
   stepInputs[def.key] = input;
+  stepRows[def.key] = row;
   input.value = fmtStep(def, numParams[def.key]);
   const set = (v: number) => {
     const snapped = Math.round(v / def.step) * def.step;
@@ -567,6 +576,33 @@ function renderStep(def: StepDef) {
   else host.appendChild(row);
 }
 for (const def of stepDefs) renderStep(def);
+
+// Only the settings that change the picture are shown for a layout: a
+// one-stage poster has no opening, the block row has no hole (so no edge
+// blocks, floaters or shape), no blocks means no stripes at all, and the
+// reveal has no title, info or logo.
+const HIDDEN_STEPS: Record<LayoutKind, NumKey[]> = {
+  reveal: ["stripPx"],
+  none: ["duration", "opening", "vignette", "faith", "rowsTop", "rowsBottom", "stripPx", "irregularity", "shapeSeed", "unitPx", "blockWidth", "blockTravel", "blockSeed", "floatCount", "floatSize", "floatTravel"],
+  row: ["duration", "opening", "vignette", "faith", "irregularity", "shapeSeed", "blockWidth", "floatCount", "floatSize", "floatTravel"],
+  side: ["duration", "stripPx", "floatCount", "floatSize", "floatTravel"],
+  full: ["duration", "stripPx", "floatCount", "floatSize", "floatTravel"],
+};
+function syncVisibility() {
+  const layout = params.layout;
+  const hidden = new Set<NumKey>(HIDDEN_STEPS[layout]);
+  for (const def of stepDefs) stepRows[def.key].hidden = hidden.has(def.key);
+  const oneStage = layout !== "reveal";
+  $<HTMLDivElement>("orderSeg").hidden = oneStage; // the stagger order only shapes the reveal
+  $<HTMLDivElement>("colorGroup").hidden = layout === "none"; // no stripes, no stripe colours
+  titleEl.closest(".row")!.toggleAttribute("hidden", !oneStage);
+  infoEl.closest(".row")!.toggleAttribute("hidden", !oneStage);
+  // a group with nothing left in it goes too
+  for (const id of ["timingGroup", "rowsGroup", "shapeGroup", "blocksGroup", "floatGroup"]) {
+    const g = $<HTMLElement>(id);
+    g.hidden = Array.from(g.children).every((c) => (c as HTMLElement).hidden);
+  }
+}
 
 // ---------- text ----------
 
@@ -1375,6 +1411,7 @@ function syncUI() {
   setPresetUI(String(params.preset));
   setLoopsUI(String(params.loops));
   syncLayoutUI();
+  syncVisibility();
   infoSizeBtn.textContent = params.infoSize.toUpperCase();
   artist2El.value = params.artist2;
   infoEl.value = params.info;

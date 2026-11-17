@@ -80,6 +80,9 @@ export interface Params {
   logo: LogoPos;
   logoColor: LogoColor;
   loops: number; // how many loops the MP4 export holds (1, 2 or 4), for longer music
+  unitPx: number; // the stripe unit in px at 1080 (45 in the reveal, 24 for the side blocks)
+  stripPx: number; // block row: height of one strip row in px at 1080
+  labelTime: number; // seconds one label block takes to come in or go
   artist: string;
   stage: string;
   labelY: number; // 0..1, top of the artist label group as a fraction of H
@@ -148,6 +151,9 @@ export const DEFAULT_PARAMS: Params = {
   logo: "off",
   logoColor: "black",
   loops: 1,
+  unitPx: 45,
+  stripPx: 36,
+  labelTime: 1,
   artist: "Chris Stussy",
   stage: "Main Stage",
   labelY: 401 / 679,
@@ -496,12 +502,12 @@ export function buildScene(p: Params): Scene {
   const layout = p.layout;
   const oneStage = layout !== "reveal";
   // Side blocks use the design's 24 px unit (at 1080); the others 45 px.
-  const unit = layout === "side" ? S / SIDE_UNITS_ACROSS : S / UNITS_ACROSS; // "full" keeps the big unit
+  const unit = (Math.max(6, p.unitPx) / 1080) * S;
   // Block row: thin strips at the top and bottom edges, as many as the row
   // sliders say (none at all for "no blocks"). A strip is the design's
   // pair: a row in the top colours over a row in the bottom colours, 36 px
   // each at 1080.
-  const stripH = (36 / 1080) * S;
+  const stripH = (Math.max(6, p.stripPx) / 1080) * S;
   const strips = layout === "row";
   const nTop = layout === "none" ? 0 : strips ? 2 * clampInt(p.rowsTop, 0, 4) : clampInt(p.rowsTop, 1, 24);
   const nBot = layout === "none" ? 0 : strips ? 2 * clampInt(p.rowsBottom, 0, 4) : clampInt(p.rowsBottom, 1, 24);
@@ -550,7 +556,7 @@ export function buildScene(p: Params): Scene {
   }
   const maxRank = rows.reduce((m, r) => Math.max(m, r.rank), 0);
   const span = p.stagger * maxRank;
-  const labelD = LABEL_DURATION;
+  const labelD = Math.max(0.1, p.labelTime);
   const labelStagger = p.stagger;
   const groupSpan = (blocks: number) => (Math.max(1, blocks) - 1) * labelStagger + labelD;
   if (oneStage) {
