@@ -70,7 +70,7 @@ export interface Params {
   info: string; // the small sentence block
   layout: LayoutKind;
   stack: StackKey[]; // one-stage layouts: the order of the block rows in the centred stack
-  free: Partial<Record<StackKey, [number, number]>>; // blocks dragged out of the stack: centre as fractions of W, H
+  free: Partial<Record<StackKey, number>>; // blocks dragged out of the stack: their centre as a fraction of H (always centred in x)
   stackY: number; // one-stage layouts: the stack's bottom edge as a fraction of H
   logo: LogoPos;
   logoColor: LogoColor;
@@ -537,10 +537,13 @@ export function buildScene(p: Params): Scene {
   if (oneStage) {
     // One stage: the stripes move for the whole loop (rows held closed for
     // the block row, open for the side blocks), the label blocks slide in
-    // once after Hold closed and stay; the loop is hold + entrance + hold.
-    const total = p.holdClosed + groupSpan(stackBlockCount(p)) + p.holdOpen;
+    // once after Hold closed, hold, then leave in reverse order, so the
+    // loop is seamless: hold + entrance + hold + exit.
+    const entrance = groupSpan(stackBlockCount(p));
+    const closeAt = p.holdClosed + entrance + p.holdOpen;
+    const total = closeAt + entrance;
     const tl: Timeline = { tOpen: 0, tOpenEnd: 0, tClose: total, tCloseEnd: total, total, span: 0 };
-    const clock: LabelClock = { openAt: p.holdClosed, openD: labelD, openStagger: labelStagger, closeAt: Infinity, closeD: labelD, closeStagger: labelStagger };
+    const clock: LabelClock = { openAt: p.holdClosed, openD: labelD, openStagger: labelStagger, closeAt, closeD: labelD, closeStagger: labelStagger };
     for (const r of rows) {
       r.delay = 0;
       r.closeDelay = -p.duration; // the stripe chain's return move lands exactly on the loop point
@@ -1290,9 +1293,9 @@ export function render(
   }
 
   // One-stage posters: the blocks form a centred stack in the order of
-  // p.stack (bottom edge at stackY), blocks dragged out of it sit where
-  // they were dropped. Everything slides in once, in stack order, after
-  // Hold closed, and stays.
+  // p.stack (bottom edge at stackY); blocks dragged out of it sit at their
+  // own height, still centred. Everything slides in once, in stack order,
+  // after Hold closed, and leaves in reverse order before the loop ends.
   const items = new Map<StackKey, LabelRow[]>();
   const hasArtist = !!p.artist.trim();
   for (const key of STACK_KEYS) {
@@ -1308,8 +1311,8 @@ export function render(
     if (rows.length) items.set(key, rows);
   }
   const order = [...p.stack.filter((k) => items.has(k)), ...STACK_KEYS.filter((k) => items.has(k) && !p.stack.includes(k))];
-  const stacked = order.filter((k) => !p.free[k]);
-  const freeKeys = order.filter((k) => !!p.free[k]);
+  const stacked = order.filter((k) => p.free[k] === undefined);
+  const freeKeys = order.filter((k) => p.free[k] !== undefined);
   const heightOf = (rows: LabelRow[]) => rows.reduce((a, r) => a + r.h, 0) + gap * (rows.length - 1);
   const widthOf = (rows: LabelRow[]) => rows.reduce((a, r) => Math.max(a, r.w + 2 * Math.abs(r.shift)), 0);
   const nBlocks = order.reduce((a, k) => a + items.get(k)!.reduce((b, r) => b + r.blocks.length, 0), 0);
@@ -1338,9 +1341,8 @@ export function render(
     out.stackRect = { x: cx - gw / 2, y: top, w: gw, h: gh };
   }
   for (const key of freeKeys) {
-    const [fx, fy] = p.free[key]!;
     const rows = items.get(key)!;
-    drawItem(key, clamp01(fy) * H - heightOf(rows) / 2, clamp01(fx) * W);
+    drawItem(key, clamp01(p.free[key]!) * H - heightOf(rows) / 2, cx);
   }
   ctx.restore();
   return out;

@@ -24,7 +24,7 @@ import {
 } from "./engine";
 import { exportMp4, exportPng, supportsVideoExport } from "./export";
 import { loadLogo } from "./logo";
-import { audioPackets, loadAudioFile, playAudio, stopAudio, PEAK_BINS, type AudioTrack } from "./audio";
+import { audioPackets, loadAudioFile, playAudio, stopAudio, windowPeaks, type AudioTrack } from "./audio";
 
 const FPS = 60; // frame counter, arrow-key stepping and MP4 export
 const TICKS_PER_SECOND = 15; // timeline tick pitch
@@ -145,7 +145,7 @@ function readHash(): boolean {
     const freeKey = k.startsWith("free.");
     if (!(k in def) && !freeKey) continue;
     const value: unknown =
-      freeKey || k === "easing" ? v.split(",").map(Number) : k === "stack" ? v.split(",").filter(Boolean) : typeof def[k] === "number" ? parseFloat(v) : v;
+      k === "easing" ? v.split(",").map(Number) : k === "stack" ? v.split(",").filter(Boolean) : freeKey || typeof def[k] === "number" ? parseFloat(v) : v;
     const path = k.split(".");
     let host = obj;
     for (const part of path.slice(0, -1)) {
@@ -750,13 +750,13 @@ let drag: DragMode = "none";
 let dragMoved = false;
 let lastX = 0;
 let lastY = 0;
-// One-stage layouts: every block row can be dragged. Inside the stack it
-// reorders (rows snap to the fixed gap), pulled sideways or out of the
-// stack it detaches and sits where it is dropped, brought back near the
-// stack it snaps in again. Shift-drag moves the whole stack.
+// One-stage layouts: every block row can be dragged up or down (rows are
+// always centred). Inside the stack it reorders (rows snap to the fixed
+// gap), pulled out above or below the stack it detaches and sits at its own
+// height, brought back near the stack it snaps in again. Shift-drag, on any
+// block or anywhere on the stack, moves the whole attached collection.
 let dragKey: StackKey | null = null;
-let grabDX = 0; // pointer minus block centre at grab time (canvas px)
-let grabDY = 0;
+let grabDY = 0; // pointer minus block centre at grab time (canvas px)
 const DETACH = 40; // css px
 function blockAt(x: number, y: number): StackKey | null {
   if (params.layout === "reveal") return null;
@@ -767,28 +767,28 @@ function blockAt(x: number, y: number): StackKey | null {
   return null;
 }
 function stackedKeys(): StackKey[] {
-  return params.stack.filter((k) => layout.blocks[k] && !params.free[k]);
+  return params.stack.filter((k) => layout.blocks[k] && params.free[k] === undefined);
 }
-function dragBlock(px: number, py: number, k: number) {
+function overStack(x: number, y: number): boolean {
+  const r = layout.stackRect;
+  return !!r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+}
+function dragBlock(py: number, k: number) {
   const key = dragKey!;
-  const W = canvas.width;
   const H = canvas.height;
-  const cxB = px - grabDX;
   const cyB = py - grabDY;
   const sr = layout.stackRect;
-  const stackCx = sr ? sr.x + sr.w / 2 : W / 2;
-  if (params.free[key]) {
-    params.free[key] = [clamp(cxB / W, 0, 1), clamp(cyB / H, 0, 1)];
+  if (params.free[key] !== undefined) {
+    params.free[key] = clamp(cyB / H, 0, 1);
     // back near the stack: snap in at the row under the pointer
-    const nearX = Math.abs(cxB - stackCx) < (DETACH / 2) * k;
-    const nearY = !sr || (cyB > sr.y - (DETACH / 2) * k && cyB < sr.y + sr.h + (DETACH / 2) * k);
-    if (nearX && nearY) {
+    const near = !sr || (cyB > sr.y - (DETACH / 2) * k && cyB < sr.y + sr.h + (DETACH / 2) * k);
+    if (near) {
       delete params.free[key];
       reorderTo(key, cyB);
     }
   } else {
-    const away = Math.abs(cxB - stackCx) > DETACH * k || (sr && (cyB < sr.y - DETACH * k || cyB > sr.y + sr.h + DETACH * k));
-    if (away) params.free[key] = [clamp(cxB / W, 0, 1), clamp(cyB / H, 0, 1)];
+    const away = sr && (cyB < sr.y - DETACH * k || cyB > sr.y + sr.h + DETACH * k);
+    if (away) params.free[key] = clamp(cyB / H, 0, 1);
     else reorderTo(key, cyB);
   }
   schedule();
@@ -812,9 +812,11 @@ canvas.addEventListener("pointerdown", (e) => {
   dragKey = falloffSelected ? null : blockAt(pt.x, pt.y);
   if (dragKey) {
     const r = layout.blocks[dragKey]!;
-    grabDX = pt.x - (r.x + r.w / 2);
     grabDY = pt.y - (r.y + r.h / 2);
     drag = e.shiftKey ? "stack" : "block";
+    canvas.classList.add("block-drag");
+  } else if (e.shiftKey && !falloffSelected && overStack(pt.x, pt.y)) {
+    drag = "stack";
     canvas.classList.add("block-drag");
   } else drag = falloffSelected ? "falloff" : overArtist(pt.x, pt.y) ? "label" : image ? "pan" : "none";
   if (wasSelected !== falloffSelected) schedule();
@@ -843,7 +845,7 @@ canvas.addEventListener("pointermove", (e) => {
   lastX = e.clientX;
   lastY = e.clientY;
   if (drag === "block") {
-    dragBlock(pt.x, pt.y, pt.k);
+    dragBlock(pt.y, pt.k);
     return;
   } else if (drag === "stack") {
     params.stackY = clamp(params.stackY + dy / canvas.height, 0, 1);
@@ -852,6 +854,12 @@ canvas.addEventListener("pointermove", (e) => {
   } else if (drag === "falloff") {
     params.falloffX = clamp(params.falloffX + dx / canvas.width, 0, 1);
     params.falloffY = clamp(params.falloffY + dy / canvas.height, 0, 1);
+    if (e.shiftKey) {
+      // Shift: snap to the vertical or horizontal centre line when close
+      const snap = 12 * pt.k;
+      if (Math.abs(params.falloffX * canvas.width - canvas.width / 2) < snap) params.falloffX = 0.5;
+      if (Math.abs(params.falloffY * canvas.height - canvas.height / 2) < snap) params.falloffY = 0.5;
+    }
     rebuild();
     return;
   } else if (drag === "label") {
@@ -919,9 +927,11 @@ canvas.addEventListener("click", () => {
 });
 
 // ---------- music ----------
-// An MP3 for the video. The strip above the card shows the whole track;
-// the dark part is the loop, dragged to where the music should start. The
-// export copies the MP3 frames into the MP4 from that point (no fade).
+// An MP3 for the video. The strip above the card shows the part of the
+// track the loop uses: first bar = where the music starts, last bar = where
+// the loop ends. Dragging the strip moves that window through the track
+// (the whole track across the strip; Shift for fine moves, one loop across
+// the strip). The export copies the MP3 frames from that point (no fade).
 
 const audioInput = $<HTMLInputElement>("audioInput");
 const audioRemoveBtn = $<HTMLButtonElement>("audioRemoveBtn");
@@ -947,20 +957,15 @@ function buildWave() {
       waveBars.push(el);
     }
   }
-  const per = PEAK_BINS / n;
-  waveBars.forEach((el, i) => {
-    let m = 0;
-    for (let j = Math.floor(i * per); j < Math.min(PEAK_BINS, Math.ceil((i + 1) * per)); j++) m = Math.max(m, audio!.peaks[j]);
-    el.style.height = `${Math.round(4 + 24 * m)}px`;
-  });
   syncWave();
 }
 function syncWave() {
   if (!audio) return;
-  const n = waveBars.length;
-  const a = Math.floor((audioStart / audio.duration) * n);
-  const b = Math.ceil(((audioStart + scene.tl.total) / audio.duration) * n);
-  waveBars.forEach((el, i) => el.classList.toggle("on", i >= a && i < b));
+  const peaks = windowPeaks(audio, audioStart, scene.tl.total, waveBars.length);
+  waveBars.forEach((el, i) => {
+    el.style.height = `${Math.round(4 + 24 * peaks[i])}px`;
+    el.classList.add("on");
+  });
   waveTimeEl.textContent = fmtTime(audioStart);
 }
 function setAudioStart(s: number) {
@@ -996,20 +1001,24 @@ audioRemoveBtn.addEventListener("click", () => {
   audioRemoveBtn.disabled = true;
 });
 let waveDrag = false;
-function waveAt(clientX: number) {
+let waveX0 = 0;
+let waveStart0 = 0;
+function waveDragTo(e: PointerEvent) {
   if (!audio) return;
   const r = waveTicksEl.getBoundingClientRect();
   if (r.width <= 0) return;
-  setAudioStart(clamp((clientX - r.left) / r.width, 0, 1) * audio.duration);
+  const span = e.shiftKey ? scene.tl.total : audio.duration;
+  setAudioStart(waveStart0 + ((e.clientX - waveX0) / r.width) * span);
 }
 waveTicksEl.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   waveDrag = true;
+  waveX0 = e.clientX;
+  waveStart0 = audioStart;
   waveTicksEl.setPointerCapture(e.pointerId);
-  waveAt(e.clientX);
 });
 waveTicksEl.addEventListener("pointermove", (e) => {
-  if (waveDrag) waveAt(e.clientX);
+  if (waveDrag) waveDragTo(e);
 });
 for (const ev of ["pointerup", "pointercancel"]) waveTicksEl.addEventListener(ev, () => (waveDrag = false));
 
@@ -1145,8 +1154,7 @@ function applySettings(str: string): boolean {
   if (obj.free && typeof obj.free === "object" && !Array.isArray(obj.free)) {
     const free: Params["free"] = {};
     for (const [k, v] of Object.entries(obj.free as Record<string, unknown>)) {
-      if ((STACK_KEYS as string[]).includes(k) && Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === "number" && Number.isFinite(x)))
-        free[k as StackKey] = [clamp(v[0] as number, 0, 1), clamp(v[1] as number, 0, 1)];
+      if ((STACK_KEYS as string[]).includes(k) && typeof v === "number" && Number.isFinite(v)) free[k as StackKey] = clamp(v, 0, 1);
     }
     params.free = free;
     applied++;

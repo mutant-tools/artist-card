@@ -42,16 +42,22 @@ Left column:
   sentence one small block. **+** next to the artist adds a second artist
   (two at most): the B2B badge sits in front of the second name. **Image**
   loads or removes the photo (or drop one on the preview, paste one, or
-  click an empty card). **Music** loads an MP3: the strip above the card is
-  the whole track, the dark part the loop; drag it to set where the music
-  starts (the readout shows the start). The MP4 gets the MP3 frames from
-  that point, cut hard at the end, no re-encoding. **Logo** (one-stage
+  click an empty card). **Music** loads an MP3: the strip above the card
+  shows the part of the track the loop uses, first bar = where the music
+  starts, last bar = where the loop ends; drag it to move that window
+  through the track (Shift for fine moves), the readout shows the start.
+  The MP4 gets the MP3 frames from that point, cut hard at the end, no
+  re-encoding. **Logo** (one-stage
   presets only) off, top or bottom, black or white.
-- **One-stage posters on the card** the blocks form a centred stack. Drag a
-  block up or down to reorder it (rows snap to the 9 px gap); drag it
-  sideways or out of the stack to detach it and drop it anywhere; bring it
-  back near the stack to snap it in again. Shift-drag moves the whole stack.
-  Order, detached positions and the stack height are in the link.
+- **One-stage posters on the card** the blocks form a centred stack and
+  only ever move vertically. Drag a block up or down to reorder it (rows
+  snap to the 9 px gap); drag it out above or below the stack to detach it
+  at its own height; bring it back near the stack to snap it in again.
+  Shift-drag on any block, or anywhere on the stack, moves the whole
+  attached collection. Blocks slide in after Hold closed and leave again in
+  reverse order, so the loop is seamless. Order, detached heights and the
+  stack height are in the link. Shift while dragging the falloff handle
+  snaps it to the centre lines.
 - **Hold closed, Opening time, Opening %, Hold open** the loop is closed
   hold, open, open hold, close, then the seam labels fold back in (every
   label block opens and closes in 1 s, one row stagger apart, on a soft
