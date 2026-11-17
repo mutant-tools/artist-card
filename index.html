@@ -13,7 +13,7 @@
     <div id="app">
       <aside class="panel" id="sidebar">
         <div class="cols">
-          <div class="col">
+          <div class="col" id="colLeft">
             <div class="titles">
               <section class="group titled">
                 <span class="title">Format</span>
@@ -36,16 +36,16 @@
             </div>
 
             <section class="group">
-              <label class="row field tall"><span class="lbl">Title</span><textarea id="titleText" rows="1" spellcheck="false" title="A big title for posters without an artist; Enter starts a new row of blocks"></textarea></label>
-              <label class="row field"><span class="lbl">Day</span><input type="text" id="dayText" spellcheck="false" /></label>
-              <div class="row field">
+              <label class="row field tall" id="titleRow"><span class="lbl">Title</span><textarea id="titleText" rows="1" spellcheck="false" title="A big title for posters without an artist; Enter starts a new row of blocks"></textarea></label>
+              <label class="row field" id="dayRow"><span class="lbl">Day</span><input type="text" id="dayText" spellcheck="false" /></label>
+              <div class="row field" id="timeRow">
                 <span class="lbl">Time</span>
                 <div class="pair">
                   <input type="text" id="timeStartText" class="w45 center" spellcheck="false" />
                   <input type="text" id="timeEndText" class="w45 center" spellcheck="false" />
                 </div>
               </div>
-              <div class="row field">
+              <div class="row field" id="artistRow">
                 <span class="lbl" id="artistLbl">Artist</span>
                 <div class="with-btn">
                   <input type="text" id="artistText" spellcheck="false" />
@@ -59,8 +59,8 @@
                   <button type="button" class="btn w20" id="artist2RemoveBtn" title="Remove the second artist">&ndash;</button>
                 </div>
               </div>
-              <label class="row field"><span class="lbl">Stage</span><input type="text" id="stageText" spellcheck="false" /></label>
-              <div class="row field tall">
+              <label class="row field" id="stageRow"><span class="lbl">Stage</span><input type="text" id="stageText" spellcheck="false" /></label>
+              <div class="row field tall" id="infoRow">
                 <span class="lbl">Info</span>
                 <div class="with-btn">
                   <textarea id="infoText" rows="1" spellcheck="false"></textarea>
@@ -101,7 +101,7 @@
           </div>
 
           <div class="col right">
-            <div class="stack">
+            <div class="stack" id="colRight">
               <section class="group" id="shapeGroup">
                 <div class="seg" id="orderSeg">
                   <button type="button" class="btn" data-order="top">Top</button>
@@ -116,7 +116,7 @@
 
               <section class="group" id="colorGroup"></section>
 
-              <section class="group">
+              <section class="group" id="exportGroup">
                 <div class="row field">
                   <span class="lbl">Loops</span>
                   <div class="seg" id="loopsSeg" title="How many times the loop plays in the MP4, for longer music">

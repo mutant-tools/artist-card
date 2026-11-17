@@ -460,6 +460,7 @@ const setOrderUI = bindSeg<StaggerOrder>("orderSeg", "order", (v) => {
 // ---------- steppers ----------
 
 type NumKey =
+  | "loopLen"
   | "unitPx"
   | "stripPx"
   | "labelTime"
@@ -500,6 +501,7 @@ const stepDefs: StepDef[] = [
   { key: "faith", label: "Faith %", min: 0, max: 100, step: 5, decimals: 0, container: "timingGroup", title: "100 = the hole follows the falloff, 0 = complete chaos (a random width per row and side)" },
   { key: "holdOpen", label: "Hold open", min: 0, max: 30, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup" },
   { key: "labelTime", label: "Text time", min: 0.3, max: 3, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup", title: "How long one label block takes to come in or go" },
+  { key: "loopLen", label: "Loop length", min: 0.5, max: 30, step: 0.5, decimals: 1, suffix: "s", container: "timingGroup", title: "One-stage posters: how long the stripes' motion cycle is" },
   { key: "rowsTop", label: "Rows top", min: 0, max: 24, step: 1, decimals: 0, container: "rowsGroup" },
   { key: "rowsBottom", label: "Rows bottom", min: 0, max: 24, step: 1, decimals: 0, container: "rowsGroup" },
   { key: "stripPx", label: "Strip height", min: 12, max: 120, step: 6, decimals: 0, container: "rowsGroup", title: "Block row: height of one strip row in px at 1080" },
@@ -577,17 +579,29 @@ function renderStep(def: StepDef) {
 }
 for (const def of stepDefs) renderStep(def);
 
-// Only the settings that change the picture are shown for a layout: a
-// one-stage poster has no opening, the block row has no hole (so no edge
-// blocks, floaters or shape), no blocks means no stripes at all, and the
-// reveal has no title, info or logo.
+// Only the settings that change the picture are shown. One-stage posters
+// have static text and no opening: their timing is one Loop length. The
+// block row has no hole (so no edge blocks, floaters or shape), no blocks
+// means no stripes at all, and the reveal has no title, info or logo.
+const ONE_STAGE_OFF: NumKey[] = ["holdClosed", "duration", "holdOpen", "labelTime", "stagger"];
 const HIDDEN_STEPS: Record<LayoutKind, NumKey[]> = {
-  reveal: ["stripPx"],
-  none: ["duration", "opening", "vignette", "faith", "rowsTop", "rowsBottom", "stripPx", "irregularity", "shapeSeed", "unitPx", "blockWidth", "blockTravel", "blockSeed", "floatCount", "floatSize", "floatTravel"],
-  row: ["duration", "opening", "vignette", "faith", "irregularity", "shapeSeed", "blockWidth", "floatCount", "floatSize", "floatTravel"],
-  side: ["duration", "stripPx", "floatCount", "floatSize", "floatTravel"],
-  full: ["duration", "stripPx", "floatCount", "floatSize", "floatTravel"],
+  reveal: ["stripPx", "loopLen"],
+  none: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "rowsTop", "rowsBottom", "stripPx", "irregularity", "shapeSeed", "unitPx", "blockWidth", "blockTravel", "blockSeed", "floatCount", "floatSize", "floatTravel"],
+  row: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "irregularity", "shapeSeed", "blockWidth", "floatCount", "floatSize", "floatTravel"],
+  side: [...ONE_STAGE_OFF, "stripPx", "floatCount", "floatSize", "floatTravel"],
+  full: [...ONE_STAGE_OFF, "stripPx", "floatCount", "floatSize", "floatTravel"],
 };
+// Text fields per preset: the artist cards (1, 4) take day, time, artist and
+// stage; the info posters (2, 3, 5) a title and the sentence.
+const TEXT_ROWS: Record<string, number[]> = {
+  titleRow: [2, 3, 5],
+  infoRow: [2, 3, 5],
+  dayRow: [1, 4],
+  timeRow: [1, 4],
+  artistRow: [1, 4],
+  stageRow: [1, 4],
+};
+const MOVABLE_GROUPS = ["blocksGroup", "timingGroup", "shapeGroup", "rowsGroup", "floatGroup", "colorGroup"];
 function syncVisibility() {
   const layout = params.layout;
   const hidden = new Set<NumKey>(HIDDEN_STEPS[layout]);
@@ -595,12 +609,46 @@ function syncVisibility() {
   const oneStage = layout !== "reveal";
   $<HTMLDivElement>("orderSeg").hidden = oneStage; // the stagger order only shapes the reveal
   $<HTMLDivElement>("colorGroup").hidden = layout === "none"; // no stripes, no stripe colours
-  titleEl.closest(".row")!.toggleAttribute("hidden", !oneStage);
-  infoEl.closest(".row")!.toggleAttribute("hidden", !oneStage);
+  for (const [id, presets] of Object.entries(TEXT_ROWS)) $<HTMLElement>(id).hidden = !presets.includes(params.preset);
+  if (!TEXT_ROWS.artistRow.includes(params.preset)) artist2Row.hidden = true;
+  else artist2Row.hidden = !artist2Shown;
   // a group with nothing left in it goes too
   for (const id of ["timingGroup", "rowsGroup", "shapeGroup", "blocksGroup", "floatGroup"]) {
     const g = $<HTMLElement>(id);
     g.hidden = Array.from(g.children).every((c) => (c as HTMLElement).hidden);
+  }
+  balanceColumns();
+}
+// The two settings columns keep about the same height: the text fields
+// stay top left and Loops / Export bottom right, the groups in between go
+// to whichever column is shorter. The reveal keeps the design's own order.
+function balanceColumns() {
+  const left = $<HTMLDivElement>("colLeft");
+  const right = $<HTMLDivElement>("colRight");
+  const exportGroup = $<HTMLElement>("exportGroup");
+  const GAP = 24;
+  const groups = MOVABLE_GROUPS.map((id) => $<HTMLElement>(id));
+  if (params.layout === "reveal") {
+    for (const g of groups.slice(0, 2)) left.appendChild(g);
+    for (const g of groups.slice(2)) right.insertBefore(g, exportGroup);
+    return;
+  }
+  for (const g of groups) g.remove();
+  const heightOf = (el: HTMLElement) => (el.hidden ? 0 : el.offsetHeight + GAP);
+  let lh = Array.from(left.children).reduce((a, c) => a + heightOf(c as HTMLElement), 0);
+  let rh = Array.from(right.children).reduce((a, c) => a + heightOf(c as HTMLElement), 0);
+  for (const g of groups) {
+    if (g.hidden) {
+      left.appendChild(g);
+      continue;
+    }
+    if (lh <= rh) {
+      left.appendChild(g);
+      lh += heightOf(g);
+    } else {
+      right.insertBefore(g, exportGroup);
+      rh += heightOf(g);
+    }
   }
 }
 
@@ -650,7 +698,7 @@ let artist2Shown = false;
 // field's own button removes it again.
 function showArtist2(show: boolean) {
   artist2Shown = show;
-  artist2Row.hidden = !show;
+  artist2Row.hidden = !show || !TEXT_ROWS.artistRow.includes(params.preset);
   artist2AddBtn.hidden = show;
   artistLbl.textContent = show ? "Artist 1" : "Artist";
 }

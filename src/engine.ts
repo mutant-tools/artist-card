@@ -83,6 +83,7 @@ export interface Params {
   unitPx: number; // the stripe unit in px at 1080 (45 in the reveal, 24 for the side blocks)
   stripPx: number; // block row: height of one strip row in px at 1080
   labelTime: number; // seconds one label block takes to come in or go
+  loopLen: number; // one-stage posters: the loop length in seconds (the stripes' motion cycle)
   artist: string;
   stage: string;
   labelY: number; // 0..1, top of the artist label group as a fraction of H
@@ -154,6 +155,7 @@ export const DEFAULT_PARAMS: Params = {
   unitPx: 45,
   stripPx: 36,
   labelTime: 1,
+  loopLen: 4,
   artist: "Chris Stussy",
   stage: "Main Stage",
   labelY: 401 / 679,
@@ -561,17 +563,15 @@ export function buildScene(p: Params): Scene {
   const groupSpan = (blocks: number) => (Math.max(1, blocks) - 1) * labelStagger + labelD;
   if (oneStage) {
     // One stage: the stripes move for the whole loop (rows held closed for
-    // the block row, open for the side blocks), the label blocks slide in
-    // once after Hold closed, hold, then leave in reverse order, so the
-    // loop is seamless: hold + entrance + hold + exit.
-    const entrance = groupSpan(stackBlockCount(p));
-    const closeAt = p.holdClosed + entrance + p.holdOpen;
-    const total = closeAt + entrance;
+    // the block row, open for the side blocks).
+    // The label blocks are simply there, static, for the whole loop; the
+    // loop is the stripes' motion cycle, Loop length long.
+    const total = Math.max(0.5, p.loopLen);
     const tl: Timeline = { tOpen: 0, tOpenEnd: 0, tClose: total, tCloseEnd: total, total, span: 0 };
-    const clock: LabelClock = { openAt: p.holdClosed, openD: labelD, openStagger: labelStagger, closeAt, closeD: labelD, closeStagger: labelStagger };
+    const clock: LabelClock = { openAt: -1e9, openD: labelD, openStagger: 0, closeAt: Infinity, closeD: labelD, closeStagger: 0 };
     for (const r of rows) {
       r.delay = 0;
-      r.closeDelay = -p.duration; // the stripe chain's return move lands exactly on the loop point
+      r.closeDelay = -Math.min(p.duration, total / 2); // the stripe chain's return move lands exactly on the loop point
       r.m0 = 1;
     }
     return finishScene(p, W, H, S, unit, rows, nTop, tl, clock, clock, bezierEase(p.easing), layout);

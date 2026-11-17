@@ -6,7 +6,7 @@ seam and slide open to reveal a photo; the stage name and day sit on the
 closed card, the times, artist name and stage unfold as word blocks once
 the card is open. **No blocks**, **Block row** (thin strips at the top and
 bottom) and **Side blocks** are one-stage posters: the stripes move for the
-whole loop, the word blocks slide in once and stay. Exports PNG stills and
+whole loop and the word blocks are simply there, static. Exports PNG stills and
 one-loop H.264 MP4s (2x: 2160 wide, 60 fps, ~0.4 bit per pixel per frame),
 with music when an MP3 is loaded.
 
@@ -65,15 +65,18 @@ Left column:
   at its own height; bring it back near the stack to snap it in again.
   Shift-drag on any block, or anywhere on the stack, moves the whole
   attached collection. Backspace while holding a block clears its text, so
-  the row disappears. Blocks slide in after Hold closed and leave again in
-  reverse order, so the loop is seamless. Order, detached heights and the
+  the row disappears. Order, detached heights and the
   stack height are in the link. Shift while dragging the falloff handle
   snaps it to the centre lines; the handle only shows in the presets that
-  have a hole (Reveal, Side blocks).
+  have a hole (Reveal, Side blocks, Full blocks).
 - **Text time** seconds one label block takes to come in or go (1 s in the
-  design). Settings that cannot change the picture in the current layout
-  are hidden: a one-stage poster has no opening time, the block row has no
-  hole, no blocks means no stripe settings at all.
+  design, reveal only). **Loop length** (one-stage posters) the stripes'
+  motion cycle in seconds. Settings and text fields that cannot change the
+  picture in the current preset are hidden, and the two columns rebalance:
+  the artist cards (1, 4) take day, time, artist and stage, the info
+  posters (2, 3, 5) a title and the sentence; a one-stage poster has no
+  opening or holds, the block row has no hole, no blocks means no stripe
+  settings at all.
 - **Hold closed, Opening time, Opening %, Hold open** the loop is closed
   hold, open, open hold, close, then the seam labels fold back in (every
   label block opens and closes in 1 s, one row stagger apart, on a soft
