@@ -44,8 +44,9 @@ Left column:
   loads or removes the photo (or drop one on the preview, paste one, or
   click an empty card). **Music** loads an MP3: the strip above the card
   shows the part of the track the loop uses, first bar = where the music
-  starts, last bar = where the loop ends; drag it to move that window
-  through the track (Shift for fine moves), the readout shows the start.
+  starts, last bar = where the loop ends; drag the waveform itself (the
+  grabbed point sticks to the cursor, left scrubs forward), the readout
+  shows the start.
   The MP4 gets the MP3 frames from that point, cut hard at the end, no
   re-encoding. **Logo** (one-stage
   presets only) off, top or bottom, black or white.
@@ -58,7 +59,8 @@ Left column:
   the row disappears. Blocks slide in after Hold closed and leave again in
   reverse order, so the loop is seamless. Order, detached heights and the
   stack height are in the link. Shift while dragging the falloff handle
-  snaps it to the centre lines.
+  snaps it to the centre lines; the handle only shows in the presets that
+  have a hole (Reveal, Side blocks).
 - **Hold closed, Opening time, Opening %, Hold open** the loop is closed
   hold, open, open hold, close, then the seam labels fold back in (every
   label block opens and closes in 1 s, one row stagger apart, on a soft

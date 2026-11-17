@@ -911,10 +911,16 @@ canvas.addEventListener("pointerleave", () => {
 // falloff circle (shown as a thin outline) instead of zooming the photo.
 let falloffSelected = false;
 const HANDLE_R = 6; // css px
+// the falloff shapes the hole, so it only exists where there is one
+function falloffActive(): boolean {
+  return params.layout === "reveal" || params.layout === "side";
+}
 function overFalloff(x: number, y: number, k: number): boolean {
+  if (!falloffActive()) return false;
   return Math.hypot(x - params.falloffX * canvas.width, y - params.falloffY * canvas.height) <= (HANDLE_R + 4) * k;
 }
 function drawFalloffHandle() {
+  if (!falloffActive()) return;
   const rect = canvas.getBoundingClientRect();
   const k = rect.width ? canvas.width / rect.width : 2;
   const x = params.falloffX * canvas.width;
@@ -950,9 +956,9 @@ canvas.addEventListener("click", () => {
 // ---------- music ----------
 // An MP3 for the video. The strip above the card shows the part of the
 // track the loop uses: first bar = where the music starts, last bar = where
-// the loop ends. Dragging the strip moves that window through the track
-// (the whole track across the strip; Shift for fine moves, one loop across
-// the strip). The export copies the MP3 frames from that point (no fade).
+// the loop ends. Dragging the strip drags the waveform itself: the grabbed
+// point sticks to the cursor, so moving left scrubs the music forward. The
+// export copies the MP3 frames from that point (no fade).
 
 const audioInput = $<HTMLInputElement>("audioInput");
 const audioRemoveBtn = $<HTMLButtonElement>("audioRemoveBtn");
@@ -1028,8 +1034,7 @@ function waveDragTo(e: PointerEvent) {
   if (!audio) return;
   const r = waveTicksEl.getBoundingClientRect();
   if (r.width <= 0) return;
-  const span = e.shiftKey ? scene.tl.total : audio.duration;
-  setAudioStart(waveStart0 + ((e.clientX - waveX0) / r.width) * span);
+  setAudioStart(waveStart0 - ((e.clientX - waveX0) / r.width) * scene.tl.total);
 }
 waveTicksEl.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
