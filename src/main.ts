@@ -353,20 +353,6 @@ const PRESETS: Record<number, Partial<Params>> = {
     colors: { ...DEFAULT_PARAMS.colors, topA: "#8D5DF3", topB: "#0906B7", bottomA: "#70FF97", bottomB: "#00FA7D" },
   },
   3: {
-    layout: "none",
-    title: "Infos Pratiques Camping",
-    day: "",
-    timeStart: "",
-    timeEnd: "",
-    artist: "",
-    stage: "",
-    info: "Tout ce qu\u2019il faut savoir pour pr\u00e9parer ton arriv\u00e9e au Camping !",
-    infoSize: "s",
-    free: { info: EDGE + INFO_H / 2 },
-    stackAnchor: "bottom",
-    stackY: 1 - EDGE,
-  },
-  4: {
     layout: "full",
     rowsTop: 4,
     rowsBottom: 4,
@@ -391,7 +377,7 @@ const PRESETS: Record<number, Partial<Params>> = {
     falloffR: 0.36,
     imageX: 0.42,
   },
-  5: {
+  4: {
     layout: "row",
     rowsTop: 0,
     rowsBottom: 1,
@@ -409,7 +395,7 @@ const PRESETS: Record<number, Partial<Params>> = {
   },
 };
 function presetPhoto(n: number): string {
-  return n >= 2 && n <= 5 ? `${import.meta.env.BASE_URL}presets/p${n}.jpg` : `${import.meta.env.BASE_URL}default.jpg`;
+  return n >= 2 && n <= 4 ? `${import.meta.env.BASE_URL}presets/p${n}.jpg` : `${import.meta.env.BASE_URL}default.jpg`;
 }
 function applyPreset(n: number) {
   const format = params.format;
@@ -591,15 +577,15 @@ const HIDDEN_STEPS: Record<LayoutKind, NumKey[]> = {
   side: [...ONE_STAGE_OFF, "stripPx", "floatCount", "floatSize", "floatTravel"],
   full: [...ONE_STAGE_OFF, "stripPx", "floatCount", "floatSize", "floatTravel"],
 };
-// Text fields per preset: the artist cards (1, 4) take day, time, artist and
-// stage; the info posters (2, 3, 5) a title and the sentence.
+// Text fields per preset: the artist cards (1, 3) take day, time, artist and
+// stage; the info posters (2, 4) a title and the sentence.
 const TEXT_ROWS: Record<string, number[]> = {
-  titleRow: [2, 3, 5],
-  infoRow: [2, 3, 5],
-  dayRow: [1, 4],
-  timeRow: [1, 4],
-  artistRow: [1, 4],
-  stageRow: [1, 4],
+  titleRow: [2, 4],
+  infoRow: [2, 4],
+  dayRow: [1, 3],
+  timeRow: [1, 3],
+  artistRow: [1, 3],
+  stageRow: [1, 3],
 };
 const MOVABLE_GROUPS = ["blocksGroup", "timingGroup", "shapeGroup", "rowsGroup", "floatGroup", "colorGroup"];
 function syncVisibility() {
@@ -1372,7 +1358,7 @@ function applySettings(str: string): boolean {
     params.infoSize = obj.infoSize;
     applied++;
   }
-  if (typeof obj.preset === "number" && obj.preset >= 1 && obj.preset <= 5) {
+  if (typeof obj.preset === "number" && obj.preset >= 1 && obj.preset <= 4) {
     params.preset = Math.round(obj.preset);
     applied++;
   }

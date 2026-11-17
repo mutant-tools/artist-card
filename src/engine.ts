@@ -76,7 +76,7 @@ export interface Params {
   stackY: number; // one-stage layouts: the stack's edge as a fraction of H (bottom edge, or top edge with stackAnchor top)
   stackAnchor: StackAnchor;
   infoSize: InfoSize; // s = the 12 px sentence, m = the 18 px small block
-  preset: number; // the example last applied (1..5); 2..5 bring their own photo
+  preset: number; // the example last applied (1..4); 2..4 bring their own photo
   logo: LogoPos;
   logoColor: LogoColor;
   loops: number; // how many loops the MP4 export holds (1, 2 or 4), for longer music
@@ -249,7 +249,7 @@ export function stackBlockCount(p: Params): number {
     else if (key === "time") n += timeLabel(p) ? 1 : 0;
     else if (key === "artist") n += wordsOf(p.artist) + (p.artist.trim() && p.artist2.trim() ? 1 + wordsOf(p.artist2) : 0);
     else if (key === "stage") n += wordsOf(p.stage);
-    else if (key === "info") n += p.info.trim() ? 1 : 0;
+    else if (key === "info") n += p.info.split(/\n/).filter((l) => l.trim()).length;
   }
   return n;
 }
@@ -1338,7 +1338,13 @@ export function render(
       const b2b = rows.length ? b2bRow(ctx, p, S, gap, maxW, fam) : null;
       if (b2b) rows.push(b2b);
     } else if (key === "stage") rows = wrapRows(ctx, words(p.stage, hasArtist), hasArtist ? STYLE_SMALL : STYLE_BIG, S, gap, maxW, fam);
-    else if (key === "info") rows = [layoutRow(ctx, p.info.trim() ? [p.info.trim()] : [], p.infoSize === "m" ? STYLE_SMALL_PLAIN : STYLE_SENTENCE, S, gap, maxW, fam)].filter((r): r is LabelRow => !!r);
+    else if (key === "info")
+      rows = p.info
+        .split(/\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => layoutRow(ctx, [line], p.infoSize === "m" ? STYLE_SMALL_PLAIN : STYLE_SENTENCE, S, gap, maxW, fam))
+        .filter((r): r is LabelRow => !!r);
     if (rows.length) items.set(key, rows);
   }
   const order = [...p.stack.filter((k) => items.has(k)), ...STACK_KEYS.filter((k) => items.has(k) && !p.stack.includes(k))];

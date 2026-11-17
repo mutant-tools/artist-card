@@ -33,11 +33,11 @@ The bundled default photo is `public/default.jpg`.
 Left column:
 
 - **Format** 4:5, 1:1, 9:16 (1080-based canvases). **Layout preset** the
-  five examples from the Figma sheet, photo included: 1 Reveal (the
-  two-stage construction), 2 Infos Pratiques (side blocks, 24 px units,
-  title at the top, sentence at the bottom), 3 Infos Pratiques Camping (no
-  blocks), 4 Full blocks (the stripes held open around the photo, logo at
-  the bottom), 5 App TMB26 (one strip at the bottom, a strip being a 36 px
+  examples from the Figma sheet, photo included: 1 Reveal (the two-stage
+  construction), 2 Infos Pratiques (side blocks, 24 px units, title at the
+  top, sentence at the bottom), 3 Full blocks (the stripes held open
+  around the photo, logo at the bottom), 4 App TMB26 (one strip at the
+  bottom, a strip being a 36 px
   row in the top colours over one in the bottom colours). A preset resets
   everything but the format and loops; edit from there. The example photos
   live in `public/presets/` (licensed, not in the repo, like the fonts).
@@ -45,7 +45,7 @@ Left column:
   block. Title is a big line for posters without an artist (Infos
   Pratiques Camping, App TMB26); it wraps at the card width and Enter
   starts a new row of blocks. The S / M button next to Info switches the
-  sentence between 12 px and 18 px. The
+  sentence between 12 px and 18 px; Enter in Info starts a new block row. The
   day is set in capitals, the stage is big when there is no artist and in
   capitals under the artist name otherwise, the time is one block, the info
   sentence one small block. **+** next to the artist adds a second artist
@@ -73,8 +73,8 @@ Left column:
   design, reveal only). **Loop length** (one-stage posters) the stripes'
   motion cycle in seconds. Settings and text fields that cannot change the
   picture in the current preset are hidden, and the two columns rebalance:
-  the artist cards (1, 4) take day, time, artist and stage, the info
-  posters (2, 3, 5) a title and the sentence; a one-stage poster has no
+  the artist cards (1, 3) take day, time, artist and stage, the info
+  posters (2, 4) a title and the sentence; a one-stage poster has no
   opening or holds, the block row has no hole, no blocks means no stripe
   settings at all.
 - **Hold closed, Opening time, Opening %, Hold open** the loop is closed
