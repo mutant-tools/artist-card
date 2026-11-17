@@ -127,7 +127,8 @@ async function encodeLoop(
   if (!ctx) throw new Error("No 2D context");
   const outW = canvas.width;
   const outH = canvas.height;
-  const totalFrames = Math.max(1, Math.round(scene.tl.total * fps));
+  const loops = Math.max(1, Math.round(p.loops || 1));
+  const totalFrames = Math.max(1, Math.round(scene.tl.total * loops * fps));
   const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target: new BufferTarget() });
   const videoSource = new EncodedVideoPacketSource("avc");
   output.addVideoTrack(videoSource);
@@ -173,7 +174,7 @@ async function encodeLoop(
     encoder.configure(config);
     for (let i = 0; i < totalFrames; i++) {
       if (encoderError) throw encoderError;
-      render(ctx, p, scene, i / fps, scale, image);
+      render(ctx, p, scene, (i / fps) % scene.tl.total, scale, image);
       const frame = new VideoFrame(canvas, {
         timestamp: Math.round((i * 1_000_000) / fps),
         duration: Math.round(1_000_000 / fps),

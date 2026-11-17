@@ -92,6 +92,8 @@ Right column:
   bottom A / B): the arrows step through them, the box shows the current
   number (type one to jump; `–` means custom colours). Click a swatch for a
   picker, hover it and press Cmd+V to paste a hex (with or without #).
+- **Loops** 1x, 2x or 4x: how many times the loop plays in the MP4, so a
+  longer piece of the music fits; the music strip covers that whole length.
 - **Copy / Paste settings** the whole state as JSON (values are clamped).
   The URL hash always carries every setting that differs from the defaults
   (photo excepted), so the link itself restores the state.

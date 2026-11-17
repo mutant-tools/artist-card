@@ -239,7 +239,7 @@ function tick(now: number) {
   const loops = total > 0 ? Math.floor(elapsed / total) : 0;
   if (loops !== playLoops) {
     playLoops = loops;
-    if (audio) playAudio(audio, audioStart + time);
+    if (audio && loops % Math.max(1, params.loops) === 0) playAudio(audio, audioStart + time);
   }
   syncTime();
   draw();
@@ -354,6 +354,15 @@ const setLogoUI = bindSeg<LogoPos>("logoSeg", "logo", (v) => {
   syncLayoutUI();
   schedule();
 });
+const setLoopsUI = bindSeg<string>("loopsSeg", "loops", (v) => {
+  params.loops = Number(v);
+  if (audio) setAudioStart(audioStart);
+  syncHash();
+});
+/** The MP4's length: the loop times the Loops setting. */
+function exportLength(): number {
+  return scene.tl.total * Math.max(1, params.loops);
+}
 const setLogoColorUI = bindSeg<LogoColor>("logoColorSeg", "logocolor", (v) => {
   params.logoColor = v;
   schedule();
@@ -988,7 +997,7 @@ function buildWave() {
 }
 function syncWave() {
   if (!audio) return;
-  const peaks = windowPeaks(audio, audioStart, scene.tl.total, waveBars.length);
+  const peaks = windowPeaks(audio, audioStart, exportLength(), waveBars.length);
   waveBars.forEach((el, i) => {
     el.style.height = `${Math.round(4 + 24 * peaks[i])}px`;
     el.classList.add("on");
@@ -997,7 +1006,7 @@ function syncWave() {
 }
 function setAudioStart(s: number) {
   if (!audio) return;
-  audioStart = clamp(s, 0, Math.max(0, audio.duration - scene.tl.total));
+  audioStart = clamp(s, 0, Math.max(0, audio.duration - exportLength()));
   syncWave();
   if (playing) playAudio(audio, audioStart + time);
 }
@@ -1034,7 +1043,7 @@ function waveDragTo(e: PointerEvent) {
   if (!audio) return;
   const r = waveTicksEl.getBoundingClientRect();
   if (r.width <= 0) return;
-  setAudioStart(waveStart0 - ((e.clientX - waveX0) / r.width) * scene.tl.total);
+  setAudioStart(waveStart0 - ((e.clientX - waveX0) / r.width) * exportLength());
 }
 waveTicksEl.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
@@ -1185,6 +1194,10 @@ function applySettings(str: string): boolean {
     params.free = free;
     applied++;
   }
+  if (obj.loops === 1 || obj.loops === 2 || obj.loops === 4) {
+    params.loops = obj.loops;
+    applied++;
+  }
   if (typeof obj.stackY === "number" && Number.isFinite(obj.stackY)) {
     params.stackY = clamp(obj.stackY, 0, 1);
     applied++;
@@ -1237,6 +1250,7 @@ function syncUI() {
   setFormatUI(params.format);
   setOrderUI(params.staggerOrder);
   setLayoutUI(params.layout);
+  setLoopsUI(String(params.loops));
   syncLayoutUI();
   artist2El.value = params.artist2;
   infoEl.value = params.info;
@@ -1280,7 +1294,7 @@ exportMp4Btn.addEventListener("click", async () => {
   exportMp4Btn.disabled = true;
   exportPngBtn.disabled = true;
   try {
-    const packets = audio ? await audioPackets(audio, audioStart, snap.scene.tl.total) : null;
+    const packets = audio ? await audioPackets(audio, audioStart, snap.scene.tl.total * Math.max(1, snap.p.loops)) : null;
     await exportMp4(
       snap.p,
       snap.scene,

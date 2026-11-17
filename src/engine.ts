@@ -74,6 +74,7 @@ export interface Params {
   stackY: number; // one-stage layouts: the stack's bottom edge as a fraction of H
   logo: LogoPos;
   logoColor: LogoColor;
+  loops: number; // how many loops the MP4 export holds (1, 2 or 4), for longer music
   artist: string;
   stage: string;
   labelY: number; // 0..1, top of the artist label group as a fraction of H
@@ -137,6 +138,7 @@ export const DEFAULT_PARAMS: Params = {
   stackY: (1350 - 103) / 1350,
   logo: "off",
   logoColor: "black",
+  loops: 1,
   artist: "Chris Stussy",
   stage: "Main Stage",
   labelY: 401 / 679,
