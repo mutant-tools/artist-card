@@ -151,6 +151,18 @@
       </main>
     </div>
 
+    <pre id="bootError" hidden></pre>
+    <script>
+      // if the app fails to start, say so on the page (a code layer has no console)
+      window.addEventListener("error", function (e) {
+        var el = document.getElementById("bootError");
+        if (el) { el.hidden = false; el.textContent = "Error: " + (e.message || e.type); }
+      });
+      window.addEventListener("unhandledrejection", function (e) {
+        var el = document.getElementById("bootError");
+        if (el) { el.hidden = false; el.textContent = "Error: " + (e.reason && e.reason.message ? e.reason.message : e.reason); }
+      });
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
