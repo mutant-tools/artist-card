@@ -963,9 +963,24 @@ function dragBlock(py: number, k: number) {
   const sr = layout.stackRect;
   const others = stackedKeys().filter((k) => k !== key);
   if (!others.length) {
-    // nothing else in the stack: the block simply follows the pointer (an
-    // empty stack has no rect to snap to, so it must not count as "near")
-    params.free[key] = clamp(cyB / H, 0, 1);
+    // nothing else in the stack: this block is the stack, so dragging it
+    // moves the stack itself (keeps it a stack for others to snap into)
+    delete params.free[key];
+    const r = layout.blocks[key]!;
+    params.stackY = clamp((params.stackAnchor === "top" ? cyB - r.h / 2 : cyB + r.h / 2) / H, 0, 1);
+    // a free block it is brought up against joins it, staying where it is
+    for (const o of STACK_KEYS) {
+      const ro = layout.blocks[o];
+      if (o === key || params.free[o] === undefined || !ro) continue;
+      if (cyB > ro.y - (DETACH / 2) * k && cyB < ro.y + ro.h + (DETACH / 2) * k) {
+        delete params.free[o];
+        const above = cyB < ro.y + ro.h / 2;
+        params.stackAnchor = above ? "bottom" : "top";
+        params.stackY = clamp((above ? ro.y + ro.h : ro.y) / H, 0, 1);
+        reorderTo(key, cyB);
+        break;
+      }
+    }
   } else if (params.free[key] !== undefined) {
     params.free[key] = clamp(cyB / H, 0, 1);
     // back near the stack: snap in at the row under the pointer
