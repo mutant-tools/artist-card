@@ -961,10 +961,15 @@ function dragBlock(py: number, k: number) {
   const H = canvas.height;
   const cyB = py - grabDY;
   const sr = layout.stackRect;
-  if (params.free[key] !== undefined) {
+  const others = stackedKeys().filter((k) => k !== key);
+  if (!others.length) {
+    // nothing else in the stack: the block simply follows the pointer (an
+    // empty stack has no rect to snap to, so it must not count as "near")
+    params.free[key] = clamp(cyB / H, 0, 1);
+  } else if (params.free[key] !== undefined) {
     params.free[key] = clamp(cyB / H, 0, 1);
     // back near the stack: snap in at the row under the pointer
-    const near = !sr || (cyB > sr.y - (DETACH / 2) * k && cyB < sr.y + sr.h + (DETACH / 2) * k);
+    const near = !!sr && cyB > sr.y - (DETACH / 2) * k && cyB < sr.y + sr.h + (DETACH / 2) * k;
     if (near) {
       delete params.free[key];
       reorderTo(key, cyB);
