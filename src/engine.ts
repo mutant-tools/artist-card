@@ -2,10 +2,9 @@
 // Everything is computed from (params, time) so playback, scrubbing and
 // export all share one code path.
 
-export type Format = "4:5" | "16:9" | "9:16" | "1:1";
+export type Format = "4:5" | "9:16" | "1:1";
 export const FORMATS: Record<Format, [number, number]> = {
   "4:5": [1080, 1350],
-  "16:9": [1920, 1080],
   "9:16": [1080, 1920],
   "1:1": [1080, 1080],
 };

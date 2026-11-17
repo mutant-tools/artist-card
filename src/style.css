@@ -28,6 +28,21 @@
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
+/* no browser blue: nothing in the panel is selectable except the fields,
+   selections and focus use the UI greys, no tap flash */
+html { -webkit-tap-highlight-color: transparent; }
+body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+input, textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+::selection { background: var(--surface-active); color: var(--text); }
+input::selection, textarea::selection { background: var(--surface-active); color: var(--text); }
+:focus { outline: none; }
+input:focus-visible, textarea:focus-visible { outline: none; }
 * {
   scrollbar-width: none;
   -ms-overflow-style: none;

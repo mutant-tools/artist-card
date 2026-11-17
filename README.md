@@ -32,7 +32,7 @@ The bundled default photo is `public/default.jpg`.
 
 Left column:
 
-- **Format** 4:5, 1:1, 16:9, 9:16 (1080-based canvases). **Layout preset**
+- **Format** 4:5, 1:1, 9:16 (1080-based canvases). **Layout preset**
   1 Reveal, 2 No blocks, 3 Block row, 4 Side blocks; a preset sets the row
   counts and block width the design uses (Side blocks: 24 px units, block
   width 3; Block row: strips of 36 px, Rows top / bottom = strips, 0 allowed).
