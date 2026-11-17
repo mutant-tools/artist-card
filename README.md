@@ -35,8 +35,11 @@ Left column:
 - **Format** 4:5, 1:1, 9:16 (1080-based canvases). **Layout preset**
   1 Reveal, 2 No blocks, 3 Block row, 4 Side blocks; a preset sets the row
   counts and block width the design uses (Side blocks: 24 px units, block
-  width 3; Block row: strips of 36 px, Rows top / bottom = strips, 0 allowed).
-- **Day, Time, Artist, Stage, Info** every word becomes its own block. The
+  width 3; Block row: Rows top / bottom = strips at each edge, 0 allowed, a
+  strip being a 36 px row in the top colours over one in the bottom colours).
+- **Title, Day, Time, Artist, Stage, Info** every word becomes its own
+  block. Title is a big line for posters without an artist (Infos
+  Pratiques Camping, App TMB26) and wraps at the card width. The
   day is set in capitals, the stage is big when there is no artist and in
   capitals under the artist name otherwise, the time is one block, the info
   sentence one small block. **+** next to the artist adds a second artist

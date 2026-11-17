@@ -14,8 +14,8 @@ export type Focus = "top" | "bottom";
 export type StaggerOrder = "center" | "top" | "bottom";
 /** reveal = the two-stage construction; the others are one-stage posters */
 export type LayoutKind = "reveal" | "none" | "row" | "side";
-export type StackKey = "day" | "time" | "artist" | "stage" | "info";
-export const STACK_KEYS: StackKey[] = ["day", "time", "artist", "stage", "info"];
+export type StackKey = "title" | "day" | "time" | "artist" | "stage" | "info";
+export const STACK_KEYS: StackKey[] = ["title", "day", "time", "artist", "stage", "info"];
 export type LogoPos = "off" | "top" | "bottom";
 export type LogoColor = "black" | "white";
 
@@ -65,6 +65,7 @@ export interface Params {
   day: string;
   timeStart: string;
   timeEnd: string;
+  title: string; // a big title line for posters that are not about an artist (Infos Pratiques, App TMB26)
   artist2: string; // second artist (B2B); empty = none
   info: string; // the small sentence block
   layout: LayoutKind;
@@ -129,10 +130,11 @@ export const DEFAULT_PARAMS: Params = {
   day: "Thursday 28.08",
   timeStart: "20:00",
   timeEnd: "21:00",
+  title: "",
   artist2: "",
   info: "",
   layout: "reveal",
-  stack: ["day", "time", "artist", "stage", "info"],
+  stack: ["title", "day", "time", "artist", "stage", "info"],
   free: {},
   stackY: (1350 - 103) / 1350,
   logo: "off",
@@ -226,7 +228,8 @@ export function stackBlockCount(p: Params): number {
   const wordsOf = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
   let n = 0;
   for (const key of STACK_KEYS) {
-    if (key === "day") n += wordsOf(p.day);
+    if (key === "title") n += wordsOf(p.title);
+    else if (key === "day") n += wordsOf(p.day);
     else if (key === "time") n += timeLabel(p) ? 1 : 0;
     else if (key === "artist") n += wordsOf(p.artist) + (p.artist.trim() && p.artist2.trim() ? 1 + wordsOf(p.artist2) : 0);
     else if (key === "stage") n += wordsOf(p.stage);
@@ -486,19 +489,26 @@ export function buildScene(p: Params): Scene {
   const oneStage = layout !== "reveal";
   // Side blocks use the design's 24 px unit (at 1080); the others 45 px.
   const unit = layout === "side" ? S / SIDE_UNITS_ACROSS : S / UNITS_ACROSS;
-  // Block row: thin strips (36 px at 1080) stacked at the top and bottom
-  // edges, as many as the row sliders say; none at all for "no blocks".
+  // Block row: thin strips at the top and bottom edges, as many as the row
+  // sliders say (none at all for "no blocks"). A strip is the design's
+  // pair: a row in the top colours over a row in the bottom colours, 36 px
+  // each at 1080.
   const stripH = (36 / 1080) * S;
-  const nTop = layout === "none" ? 0 : layout === "row" ? clampInt(p.rowsTop, 0, 8) : clampInt(p.rowsTop, 1, 24);
-  const nBot = layout === "none" ? 0 : layout === "row" ? clampInt(p.rowsBottom, 0, 8) : clampInt(p.rowsBottom, 1, 24);
+  const strips = layout === "row";
+  const nTop = layout === "none" ? 0 : strips ? 2 * clampInt(p.rowsTop, 0, 4) : clampInt(p.rowsTop, 1, 24);
+  const nBot = layout === "none" ? 0 : strips ? 2 * clampInt(p.rowsBottom, 0, 4) : clampInt(p.rowsBottom, 1, 24);
   const n = nTop + nBot;
   const rows: RowSpec[] = [];
   for (let i = 0; i < n; i++) {
-    const half: Focus = i < nTop ? "top" : "bottom";
+    let half: Focus = i < nTop ? "top" : "bottom";
     let y0: number;
     let y1: number;
-    if (layout === "row") {
-      y0 = half === "top" ? i * stripH : H - (nBot - (i - nTop)) * stripH;
+    if (strips) {
+      // rows come in pairs (top colours, then bottom colours) from each edge
+      const atTop = i < nTop;
+      const j = atTop ? i : i - nTop;
+      half = j % 2 === 0 ? "top" : "bottom";
+      y0 = atTop ? j * stripH : H - (nBot - j) * stripH;
       y1 = y0 + stripH;
     } else {
       y0 = half === "top" ? (H / 2) * (i / nTop) : H / 2 + (H / 2) * ((i - nTop) / nBot);
@@ -1304,7 +1314,8 @@ export function render(
   const hasArtist = !!p.artist.trim();
   for (const key of STACK_KEYS) {
     let rows: LabelRow[] = [];
-    if (key === "day") rows = wrapRows(ctx, words(p.day, true), STYLE_SMALL, S, gap, maxW, fam);
+    if (key === "title") rows = wrapRows(ctx, words(p.title, false), STYLE_BIG, S, gap, maxW, fam);
+    else if (key === "day") rows = wrapRows(ctx, words(p.day, true), STYLE_SMALL, S, gap, maxW, fam);
     else if (key === "time") rows = [layoutRow(ctx, timeLabel(p) ? [timeLabel(p)] : [], STYLE_TINY, S, gap, maxW, fam)].filter((r): r is LabelRow => !!r);
     else if (key === "artist") {
       rows = wrapRows(ctx, words(p.artist, false), STYLE_BIG, S, gap, maxW, fam);

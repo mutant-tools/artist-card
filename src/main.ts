@@ -331,7 +331,7 @@ const setFormatUI = bindSeg<Format>("formatSeg", "format", (v) => {
 const PRESET_DEFAULTS: Record<LayoutKind, Partial<Pick<Params, "rowsTop" | "rowsBottom" | "blockWidth">>> = {
   reveal: { rowsTop: 4, rowsBottom: 4, blockWidth: 2 },
   none: {},
-  row: { rowsTop: 2, rowsBottom: 2 },
+  row: { rowsTop: 1, rowsBottom: 1 },
   side: { rowsTop: 4, rowsBottom: 4, blockWidth: 3 },
 };
 const logoRow = $<HTMLDivElement>("logoRow");
@@ -504,6 +504,7 @@ function bindText(id: string, apply: (v: string) => void) {
   });
   return el;
 }
+const titleEl = bindText("titleText", (v) => (params.title = v));
 const dayEl = bindText("dayText", (v) => (params.day = v));
 const timeStartEl = bindText("timeStartText", (v) => (params.timeStart = v));
 const timeEndEl = bindText("timeEndText", (v) => (params.timeEnd = v));
@@ -535,7 +536,7 @@ $<HTMLButtonElement>("artist2RemoveBtn").addEventListener("click", () => {
   rebuild();
 });
 // text changes can change the block count, which sets the loop length
-for (const el of [dayEl, timeStartEl, timeEndEl, artistEl, stageTextEl, artist2El, infoEl]) el.addEventListener("input", () => rebuild());
+for (const el of [titleEl, dayEl, timeStartEl, timeEndEl, artistEl, stageTextEl, artist2El, infoEl]) el.addEventListener("input", () => rebuild());
 document.fonts.addEventListener("loadingdone", () => schedule());
 
 // ---------- colours ----------
@@ -811,7 +812,8 @@ function dragBlock(py: number, k: number) {
   schedule();
 }
 function clearBlock(key: StackKey) {
-  if (key === "day") dayEl.value = params.day = "";
+  if (key === "title") titleEl.value = params.title = "";
+  else if (key === "day") dayEl.value = params.day = "";
   else if (key === "time") timeStartEl.value = timeEndEl.value = params.timeStart = params.timeEnd = "";
   else if (key === "artist") {
     artistEl.value = params.artist = "";
@@ -1216,7 +1218,7 @@ function applySettings(str: string): boolean {
     params.stackY = clamp(obj.stackY, 0, 1);
     applied++;
   }
-  for (const k of ["day", "timeStart", "timeEnd", "artist", "stage", "artist2", "info"] as const) {
+  for (const k of ["title", "day", "timeStart", "timeEnd", "artist", "stage", "artist2", "info"] as const) {
     if (typeof obj[k] === "string") {
       params[k] = (obj[k] as string).slice(0, 200);
       applied++;
@@ -1270,6 +1272,7 @@ function syncUI() {
   infoEl.value = params.info;
   showArtist2(!!params.artist2 || artist2Shown);
   for (const def of stepDefs) syncStep(def.key);
+  titleEl.value = params.title;
   dayEl.value = params.day;
   timeStartEl.value = params.timeStart;
   timeEndEl.value = params.timeEnd;
