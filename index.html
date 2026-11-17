@@ -26,16 +26,17 @@
               <section class="group titled">
                 <span class="title">Layout Preset</span>
                 <div class="hug" id="layoutSeg">
-                  <button type="button" class="btn active" data-layout="reveal" title="Reveal: the stripes open and close around the labels">1</button>
-                  <button type="button" class="btn" data-layout="none" title="No blocks">2</button>
-                  <button type="button" class="btn" data-layout="row" title="Block row: thin strips at the top and bottom">3</button>
-                  <button type="button" class="btn" data-layout="side" title="Side blocks">4</button>
+                  <button type="button" class="btn active" data-preset="1" title="Reveal: the stripes open and close around the labels">1</button>
+                  <button type="button" class="btn" data-preset="2" title="Infos Pratiques: side blocks, title at the top, sentence at the bottom">2</button>
+                  <button type="button" class="btn" data-preset="3" title="Infos Pratiques Camping: no blocks, sentence at the top, title at the bottom">3</button>
+                  <button type="button" class="btn" data-preset="4" title="Full blocks: the stripes held open around the photo, logo at the bottom">4</button>
+                  <button type="button" class="btn" data-preset="5" title="App TMB26: one strip at the bottom, title and sentence at the top">5</button>
                 </div>
               </section>
             </div>
 
             <section class="group">
-              <label class="row field"><span class="lbl">Title</span><input type="text" id="titleText" spellcheck="false" placeholder="" title="A big title for posters without an artist (Infos Pratiques, App TMB26)" /></label>
+              <label class="row field tall"><span class="lbl">Title</span><textarea id="titleText" rows="2" spellcheck="false" title="A big title for posters without an artist; Enter starts a new row of blocks"></textarea></label>
               <label class="row field"><span class="lbl">Day</span><input type="text" id="dayText" spellcheck="false" /></label>
               <div class="row field">
                 <span class="lbl">Time</span>
@@ -59,7 +60,13 @@
                 </div>
               </div>
               <label class="row field"><span class="lbl">Stage</span><input type="text" id="stageText" spellcheck="false" /></label>
-              <label class="row field tall"><span class="lbl">Info</span><textarea id="infoText" rows="2" spellcheck="false" placeholder=""></textarea></label>
+              <div class="row field tall">
+                <span class="lbl">Info</span>
+                <div class="with-btn">
+                  <textarea id="infoText" rows="2" spellcheck="false"></textarea>
+                  <button type="button" class="btn w20 tall" id="infoSizeBtn" title="Sentence size: S = 12 px, M = 18 px">S</button>
+                </div>
+              </div>
               <div class="row field">
                 <span class="lbl">Image</span>
                 <div class="seg">

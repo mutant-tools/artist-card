@@ -13,7 +13,9 @@ export type Bezier = [number, number, number, number];
 export type Focus = "top" | "bottom";
 export type StaggerOrder = "center" | "top" | "bottom";
 /** reveal = the two-stage construction; the others are one-stage posters */
-export type LayoutKind = "reveal" | "none" | "row" | "side";
+export type LayoutKind = "reveal" | "none" | "row" | "side" | "full";
+export type StackAnchor = "top" | "bottom";
+export type InfoSize = "s" | "m";
 export type StackKey = "title" | "day" | "time" | "artist" | "stage" | "info";
 export const STACK_KEYS: StackKey[] = ["title", "day", "time", "artist", "stage", "info"];
 export type LogoPos = "off" | "top" | "bottom";
@@ -71,7 +73,10 @@ export interface Params {
   layout: LayoutKind;
   stack: StackKey[]; // one-stage layouts: the order of the block rows in the centred stack
   free: Partial<Record<StackKey, number>>; // blocks dragged out of the stack: their centre as a fraction of H (always centred in x)
-  stackY: number; // one-stage layouts: the stack's bottom edge as a fraction of H
+  stackY: number; // one-stage layouts: the stack's edge as a fraction of H (bottom edge, or top edge with stackAnchor top)
+  stackAnchor: StackAnchor;
+  infoSize: InfoSize; // s = the 12 px sentence, m = the 18 px small block
+  preset: number; // the example last applied (1..5); 2..5 bring their own photo
   logo: LogoPos;
   logoColor: LogoColor;
   loops: number; // how many loops the MP4 export holds (1, 2 or 4), for longer music
@@ -137,6 +142,9 @@ export const DEFAULT_PARAMS: Params = {
   stack: ["title", "day", "time", "artist", "stage", "info"],
   free: {},
   stackY: (1350 - 103) / 1350,
+  stackAnchor: "bottom",
+  infoSize: "s",
+  preset: 1,
   logo: "off",
   logoColor: "black",
   loops: 1,
@@ -488,7 +496,7 @@ export function buildScene(p: Params): Scene {
   const layout = p.layout;
   const oneStage = layout !== "reveal";
   // Side blocks use the design's 24 px unit (at 1080); the others 45 px.
-  const unit = layout === "side" ? S / SIDE_UNITS_ACROSS : S / UNITS_ACROSS;
+  const unit = layout === "side" ? S / SIDE_UNITS_ACROSS : S / UNITS_ACROSS; // "full" keeps the big unit
   // Block row: thin strips at the top and bottom edges, as many as the row
   // sliders say (none at all for "no blocks"). A strip is the design's
   // pair: a row in the top colours over a row in the bottom colours, 36 px
@@ -818,7 +826,7 @@ function blockProgress(scene: Scene, c: LabelClock, g: number, n: number, t: num
 
 /** Row opening progress 0..1 at time t (seconds into the loop). */
 export function rowProgress(scene: Scene, p: Params, r: RowSpec, t: number): number {
-  if (scene.layout === "side") return 1;
+  if (scene.layout === "side" || scene.layout === "full") return 1;
   if (scene.layout !== "reveal") return 0;
   return segmentProgress(
     scene,
@@ -953,6 +961,8 @@ const STYLE_SMALL: LabelStyle = { fs: 36 / D, padTop: 18 / D, padBottom: 18 / D,
 const STYLE_TINY: LabelStyle = { fs: 18 / D, padTop: 18 / D, padBottom: 18 / D, padX: 3 / D, upper: false, tracking: LABEL_TRACKING };
 // the small sentence (24 px at 1080, no tracking, one block)
 const STYLE_SENTENCE: LabelStyle = { fs: 12 / D, padTop: 12 / D, padBottom: 12 / D, padX: 3 / D, upper: false, tracking: 0 };
+// the info sentence in its bigger size (18 px, no capitals)
+const STYLE_SMALL_PLAIN: LabelStyle = { fs: 18 / D, padTop: 18 / D, padBottom: 18 / D, padX: 3 / D, upper: false, tracking: LABEL_TRACKING };
 const LABEL_GAP = 4.5 / D;
 
 interface Block {
@@ -1314,7 +1324,7 @@ export function render(
   const hasArtist = !!p.artist.trim();
   for (const key of STACK_KEYS) {
     let rows: LabelRow[] = [];
-    if (key === "title") rows = wrapRows(ctx, words(p.title, false), STYLE_BIG, S, gap, maxW, fam);
+    if (key === "title") rows = p.title.split(/\n/).flatMap((line) => wrapRows(ctx, words(line, false), STYLE_BIG, S, gap, maxW, fam));
     else if (key === "day") rows = wrapRows(ctx, words(p.day, true), STYLE_SMALL, S, gap, maxW, fam);
     else if (key === "time") rows = [layoutRow(ctx, timeLabel(p) ? [timeLabel(p)] : [], STYLE_TINY, S, gap, maxW, fam)].filter((r): r is LabelRow => !!r);
     else if (key === "artist") {
@@ -1322,7 +1332,7 @@ export function render(
       const b2b = rows.length ? b2bRow(ctx, p, S, gap, maxW, fam) : null;
       if (b2b) rows.push(b2b);
     } else if (key === "stage") rows = wrapRows(ctx, words(p.stage, hasArtist), hasArtist ? STYLE_SMALL : STYLE_BIG, S, gap, maxW, fam);
-    else if (key === "info") rows = [layoutRow(ctx, p.info.trim() ? [p.info.trim()] : [], STYLE_SENTENCE, S, gap, maxW, fam)].filter((r): r is LabelRow => !!r);
+    else if (key === "info") rows = [layoutRow(ctx, p.info.trim() ? [p.info.trim()] : [], p.infoSize === "m" ? STYLE_SMALL_PLAIN : STYLE_SENTENCE, S, gap, maxW, fam)].filter((r): r is LabelRow => !!r);
     if (rows.length) items.set(key, rows);
   }
   const order = [...p.stack.filter((k) => items.has(k)), ...STACK_KEYS.filter((k) => items.has(k) && !p.stack.includes(k))];
@@ -1347,7 +1357,8 @@ export function render(
   if (stacked.length) {
     const gh = stacked.reduce((a, k) => a + heightOf(items.get(k)!), 0) + gap * (stacked.length - 1);
     const gw = stacked.reduce((a, k) => Math.max(a, widthOf(items.get(k)!)), 0);
-    const top = Math.max(0, Math.min(H - gh, clamp01(p.stackY) * H - gh));
+    const edge = clamp01(p.stackY) * H;
+    const top = Math.max(0, Math.min(H - gh, p.stackAnchor === "top" ? edge : edge - gh));
     let yy = top;
     for (const key of stacked) {
       drawItem(key, yy, cx);

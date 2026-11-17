@@ -140,6 +140,8 @@ html, body {
 .row.field > .with-btn { display: flex; gap: var(--row-gap); }
 .with-btn > input { flex: 1 1 0; min-width: 0; }
 .row.field.tall { height: 46px; }
+.btn.tall { height: 46px; }
+.with-btn > textarea { flex: 1 1 0; min-width: 0; }
 .titles { display: flex; justify-content: space-between; gap: var(--gap); }
 textarea {
   height: 46px;

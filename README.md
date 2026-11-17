@@ -32,14 +32,20 @@ The bundled default photo is `public/default.jpg`.
 
 Left column:
 
-- **Format** 4:5, 1:1, 9:16 (1080-based canvases). **Layout preset**
-  1 Reveal, 2 No blocks, 3 Block row, 4 Side blocks; a preset sets the row
-  counts and block width the design uses (Side blocks: 24 px units, block
-  width 3; Block row: Rows top / bottom = strips at each edge, 0 allowed, a
-  strip being a 36 px row in the top colours over one in the bottom colours).
+- **Format** 4:5, 1:1, 9:16 (1080-based canvases). **Layout preset** the
+  five examples from the Figma sheet, photo included: 1 Reveal (the
+  two-stage construction), 2 Infos Pratiques (side blocks, 24 px units,
+  title at the top, sentence at the bottom), 3 Infos Pratiques Camping (no
+  blocks), 4 Full blocks (the stripes held open around the photo, logo at
+  the bottom), 5 App TMB26 (one strip at the bottom, a strip being a 36 px
+  row in the top colours over one in the bottom colours). A preset resets
+  everything but the format and loops; edit from there. The example photos
+  live in `public/presets/` (licensed, not in the repo, like the fonts).
 - **Title, Day, Time, Artist, Stage, Info** every word becomes its own
   block. Title is a big line for posters without an artist (Infos
-  Pratiques Camping, App TMB26) and wraps at the card width. The
+  Pratiques Camping, App TMB26); it wraps at the card width and Enter
+  starts a new row of blocks. The S / M button next to Info switches the
+  sentence between 12 px and 18 px. The
   day is set in capitals, the stage is big when there is no artist and in
   capitals under the artist name otherwise, the time is one block, the info
   sentence one small block. **+** next to the artist adds a second artist

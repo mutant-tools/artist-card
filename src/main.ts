@@ -326,14 +326,99 @@ const setFormatUI = bindSeg<Format>("formatSeg", "format", (v) => {
   applyFormat();
   rebuild();
 });
-// Layout presets. Switching one sets the row counts and block width the
-// design uses for it; everything else stays as it is.
-const PRESET_DEFAULTS: Record<LayoutKind, Partial<Pick<Params, "rowsTop" | "rowsBottom" | "blockWidth">>> = {
-  reveal: { rowsTop: 4, rowsBottom: 4, blockWidth: 2 },
-  none: {},
-  row: { rowsTop: 1, rowsBottom: 1 },
-  side: { rowsTop: 4, rowsBottom: 4, blockWidth: 3 },
+// Layout presets: the examples from the Figma sheet (frame 442:25032).
+// Each one is a complete state, photo included; 1 is the reveal with the
+// default photo. Applying a preset resets everything but the format.
+const EDGE = 51.5 / 675; // the examples' margin, as a fraction of the height
+const INFO_H = (12 + 12 * 0.694 + 12) / 675; // the sentence block's height
+const PRESETS: Record<number, Partial<Params>> = {
+  1: {},
+  2: {
+    layout: "side",
+    rowsTop: 4,
+    rowsBottom: 4,
+    blockWidth: 3,
+    title: "Infos\nPratiques",
+    day: "",
+    timeStart: "",
+    timeEnd: "",
+    artist: "",
+    stage: "",
+    info: "Tout ce qu\u2019il faut savoir pour pr\u00e9parer ton arriv\u00e9e au TMB !",
+    infoSize: "s",
+    free: { info: 1 - EDGE - INFO_H / 2 },
+    stackAnchor: "top",
+    stackY: EDGE,
+    colors: { ...DEFAULT_PARAMS.colors, topA: "#8D5DF3", topB: "#0906B7", bottomA: "#70FF97", bottomB: "#00FA7D" },
+  },
+  3: {
+    layout: "none",
+    title: "Infos Pratiques Camping",
+    day: "",
+    timeStart: "",
+    timeEnd: "",
+    artist: "",
+    stage: "",
+    info: "Tout ce qu\u2019il faut savoir pour pr\u00e9parer ton arriv\u00e9e au Camping !",
+    infoSize: "s",
+    free: { info: EDGE + INFO_H / 2 },
+    stackAnchor: "bottom",
+    stackY: 1 - EDGE,
+  },
+  4: {
+    layout: "full",
+    rowsTop: 4,
+    rowsBottom: 4,
+    blockWidth: 2,
+    day: "Thursday 28.08",
+    timeStart: "",
+    timeEnd: "",
+    artist: "Chris Stussy",
+    stage: "",
+    stackAnchor: "top",
+    stackY: EDGE,
+    logo: "bottom",
+    logoColor: "white",
+    colors: { ...DEFAULT_PARAMS.colors, topA: "#E90062", topB: "#70FFDF", bottomA: "#F3705D", bottomB: "#F99390" },
+    opening: 90,
+    vignette: 100,
+    faith: 100,
+    irregularity: 0,
+    floatCount: 0,
+    falloffX: 0.5,
+    falloffY: 0.5,
+    falloffR: 0.36,
+    imageX: 0.42,
+  },
+  5: {
+    layout: "row",
+    rowsTop: 0,
+    rowsBottom: 1,
+    title: "App TMB26",
+    day: "",
+    timeStart: "",
+    timeEnd: "",
+    artist: "",
+    stage: "",
+    info: "Disponible en t\u00e9l\u00e9chargement !",
+    infoSize: "m",
+    stackAnchor: "top",
+    stackY: EDGE,
+    colors: { ...DEFAULT_PARAMS.colors, topA: "#8D5DF3", topB: "#0906B7", bottomA: "#FF63F4", bottomB: "#ED00A5" },
+  },
 };
+function presetPhoto(n: number): string {
+  return n >= 2 && n <= 5 ? `${import.meta.env.BASE_URL}presets/p${n}.jpg` : `${import.meta.env.BASE_URL}default.jpg`;
+}
+function applyPreset(n: number) {
+  const format = params.format;
+  const loops = params.loops;
+  Object.assign(params, structuredClone(DEFAULT_PARAMS), structuredClone(PRESETS[n] ?? {}), { format, loops, preset: n });
+  showArtist2(false);
+  syncUI();
+  rebuild();
+  loadPhotoUrl(presetPhoto(n));
+}
 const logoRow = $<HTMLDivElement>("logoRow");
 const logoColorSeg = $<HTMLDivElement>("logoColorSeg");
 function syncLayoutUI() {
@@ -343,15 +428,7 @@ function syncLayoutUI() {
   setLogoUI(params.logo);
   setLogoColorUI(params.logoColor);
 }
-const setLayoutUI = bindSeg<LayoutKind>("layoutSeg", "layout", (v) => {
-  if (v === params.layout) return;
-  params.layout = v;
-  Object.assign(params, PRESET_DEFAULTS[v]);
-  if (v === "reveal") params.logo = "off";
-  for (const def of stepDefs) syncStep(def.key);
-  syncLayoutUI();
-  rebuild();
-});
+const setPresetUI = bindSeg<string>("layoutSeg", "preset", (v) => applyPreset(Number(v)));
 const setLogoUI = bindSeg<LogoPos>("logoSeg", "logo", (v) => {
   params.logo = v;
   syncLayoutUI();
@@ -500,7 +577,7 @@ function bindText(id: string, apply: (v: string) => void) {
     schedule();
   });
   el.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") el.blur();
+    if (e.key === "Enter" && el.tagName !== "TEXTAREA") el.blur();
   });
   return el;
 }
@@ -512,6 +589,12 @@ const artistEl = bindText("artistText", (v) => (params.artist = v));
 const stageTextEl = bindText("stageText", (v) => (params.stage = v));
 const artist2El = bindText("artist2Text", (v) => (params.artist2 = v));
 const infoEl = bindText("infoText", (v) => (params.info = v));
+const infoSizeBtn = $<HTMLButtonElement>("infoSizeBtn");
+infoSizeBtn.addEventListener("click", () => {
+  params.infoSize = params.infoSize === "s" ? "m" : "s";
+  infoSizeBtn.textContent = params.infoSize.toUpperCase();
+  rebuild();
+});
 const artist2Row = $<HTMLDivElement>("artist2Row");
 const artist2AddBtn = $<HTMLButtonElement>("artist2AddBtn");
 const artistLbl = $<HTMLSpanElement>("artistLbl");
@@ -926,7 +1009,7 @@ let falloffSelected = false;
 const HANDLE_R = 6; // css px
 // the falloff shapes the hole, so it only exists where there is one
 function falloffActive(): boolean {
-  return params.layout === "reveal" || params.layout === "side";
+  return params.layout === "reveal" || params.layout === "side" || params.layout === "full";
 }
 function overFalloff(x: number, y: number, k: number): boolean {
   if (!falloffActive()) return false;
@@ -1185,7 +1268,19 @@ function applySettings(str: string): boolean {
     params.labelY = clamp(obj.labelY, 0, 1);
     applied++;
   }
-  if (obj.layout === "reveal" || obj.layout === "none" || obj.layout === "row" || obj.layout === "side") {
+  if (obj.stackAnchor === "top" || obj.stackAnchor === "bottom") {
+    params.stackAnchor = obj.stackAnchor;
+    applied++;
+  }
+  if (obj.infoSize === "s" || obj.infoSize === "m") {
+    params.infoSize = obj.infoSize;
+    applied++;
+  }
+  if (typeof obj.preset === "number" && obj.preset >= 1 && obj.preset <= 5) {
+    params.preset = Math.round(obj.preset);
+    applied++;
+  }
+  if (obj.layout === "reveal" || obj.layout === "none" || obj.layout === "row" || obj.layout === "side" || obj.layout === "full") {
     params.layout = obj.layout;
     applied++;
   }
@@ -1265,9 +1360,10 @@ pasteBtn.addEventListener("click", async () => {
 function syncUI() {
   setFormatUI(params.format);
   setOrderUI(params.staggerOrder);
-  setLayoutUI(params.layout);
+  setPresetUI(String(params.preset));
   setLoopsUI(String(params.loops));
   syncLayoutUI();
+  infoSizeBtn.textContent = params.infoSize.toUpperCase();
   artist2El.value = params.artist2;
   infoEl.value = params.info;
   showArtist2(!!params.artist2 || artist2Shown);
@@ -1380,22 +1476,23 @@ window.artistCard = {
 // ---------- init ----------
 
 /** The bundled default photo; a loaded, pasted or dropped image replaces it. */
-function loadDefaultImage() {
+function loadPhotoUrl(url: string) {
   const gen = ++loadGen;
   const img = new Image();
   img.onload = () => {
     if (gen !== loadGen) return;
     setImage({ source: img, width: img.naturalWidth, height: img.naturalHeight });
   };
-  img.src = `${import.meta.env.BASE_URL}default.jpg`;
+  img.src = url;
 }
 
 applyFormat();
 setImage(null);
-loadDefaultImage();
 void loadLogo(`${import.meta.env.BASE_URL}logo.svg`).then(() => schedule());
 syncUI();
 if (!readHash()) rebuild();
+// the photo that belongs to the preset in the link (the default one for the reveal)
+loadPhotoUrl(presetPhoto(params.preset));
 window.addEventListener("hashchange", () => {
   if (location.hash.replace(/^#/, "") !== lastHash) readHash();
 });
