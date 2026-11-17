@@ -982,13 +982,15 @@ function measureBlocks(ctx: CanvasRenderingContext2D, texts: string[], style: La
   const padTop = style.padTop * S;
   const padBottom = style.padBottom * S;
   ctx.font = labelFont(fs, family);
-  setTracking(ctx, fs, style.tracking);
+  // Measure without letter-spacing and add the tracking by hand: browsers
+  // disagree on how measureText counts letter-spacing (Safari and Chrome
+  // differ for some strings), while they draw it the same way. Figma puts
+  // the tracking between glyphs only, so one less than the glyph count.
+  setTracking(ctx, fs, 0);
   const capH = ctx.measureText("H").actualBoundingBoxAscent || fs * 0.7;
-  // the canvas adds the tracking after the last glyph too; Figma does not
-  const trail = Math.abs(style.tracking * fs);
   return texts.map((text) => ({
     text,
-    w: ctx.measureText(text).width + trail + 2 * padX,
+    w: ctx.measureText(text).width + style.tracking * fs * Math.max(0, [...text].length - 1) + 2 * padX,
     h: padTop + capH + padBottom,
     fs,
     padX,
