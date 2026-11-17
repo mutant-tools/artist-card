@@ -1,5 +1,6 @@
-import { Muxer, ArrayBufferTarget } from "mp4-muxer";
+import { Output, Mp4OutputFormat, BufferTarget, EncodedVideoPacketSource, EncodedAudioPacketSource, EncodedPacket } from "mediabunny";
 import { render, type ImageSource, type Params, type Scene } from "./engine";
+import type { AudioPackets } from "./audio";
 
 export function downloadBlob(blob: Blob, filename: string) {
   const a = document.createElement("a");
@@ -120,24 +121,27 @@ async function encodeLoop(
   image: ImageSource | null,
   canvas: HTMLCanvasElement,
   onProgress: (fraction: number) => void,
+  audio: AudioPackets | null,
 ): Promise<ArrayBuffer> {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("No 2D context");
   const outW = canvas.width;
   const outH = canvas.height;
   const totalFrames = Math.max(1, Math.round(scene.tl.total * fps));
-  const muxer = new Muxer({
-    target: new ArrayBufferTarget(),
-    video: { codec: "avc", width: outW, height: outH, frameRate: fps },
-    fastStart: "in-memory",
-  });
+  const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target: new BufferTarget() });
+  const videoSource = new EncodedVideoPacketSource("avc");
+  output.addVideoTrack(videoSource);
+  const audioSource = audio && audio.packets.length ? new EncodedAudioPacketSource(audio.codec) : null;
+  if (audioSource) output.addAudioTrack(audioSource);
+  await output.start();
   let encoderError: unknown = null;
   let chunks = 0;
   let lastChunkAt = performance.now();
+  let writes: Promise<void>[] = [];
   const encoder = new VideoEncoder({
     output: (chunk, meta) => {
       try {
-        muxer.addVideoChunk(chunk, meta);
+        writes.push(videoSource.add(EncodedPacket.fromEncodedChunk(chunk), meta).catch((e) => void (encoderError = e)));
         chunks++;
         lastChunkAt = performance.now();
       } catch (e) {
@@ -182,10 +186,18 @@ async function encodeLoop(
       await sleep(0);
     }
     await flushWithWatchdog();
+    await Promise.all(writes);
+    writes = [];
     if (encoderError) throw encoderError;
     if (chunks === 0) throw new StallError("The encoder produced no frames");
-    muxer.finalize();
-    return muxer.target.buffer;
+    if (audioSource && audio) {
+      const meta = audio.decoderConfig ? { decoderConfig: audio.decoderConfig } : undefined;
+      for (let i = 0; i < audio.packets.length; i++) await audioSource.add(audio.packets[i], i === 0 ? meta : undefined);
+    }
+    await output.finalize();
+    const buffer = output.target.buffer;
+    if (!buffer) throw new Error("The muxer produced no file");
+    return buffer;
   } finally {
     try {
       if (encoder.state !== "closed") encoder.close();
@@ -203,6 +215,7 @@ export async function exportMp4(
   fps: number,
   image: ImageSource | null,
   onProgress: (fraction: number) => void,
+  audio: AudioPackets | null = null,
 ) {
   await fontsReady(p);
   const outW = Math.max(16, Math.floor((scene.W * scale) / 2) * 2);
@@ -214,7 +227,7 @@ export async function exportMp4(
   for (const config of encoderConfigs(outW, outH, fps)) {
     if (!(await configSupported(config))) continue;
     try {
-      const buffer = await encodeLoop(config, p, scene, scale, fps, image, c, onProgress);
+      const buffer = await encodeLoop(config, p, scene, scale, fps, image, c, onProgress, audio);
       downloadBlob(new Blob([buffer], { type: "video/mp4" }), `${fileStem(p, scale)}.mp4`);
       return;
     } catch (e) {

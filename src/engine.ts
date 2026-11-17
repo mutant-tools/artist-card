@@ -13,6 +13,12 @@ export const FORMATS: Record<Format, [number, number]> = {
 export type Bezier = [number, number, number, number];
 export type Focus = "top" | "bottom";
 export type StaggerOrder = "center" | "top" | "bottom";
+/** reveal = the two-stage construction; the others are one-stage posters */
+export type LayoutKind = "reveal" | "none" | "row" | "side";
+export type StackKey = "day" | "time" | "artist" | "stage" | "info";
+export const STACK_KEYS: StackKey[] = ["day", "time", "artist", "stage", "info"];
+export type LogoPos = "off" | "top" | "bottom";
+export type LogoColor = "black" | "white";
 
 export interface Colors {
   topA: string;
@@ -25,6 +31,7 @@ export interface Colors {
 
 /** One block unit is the card's short side divided by this. */
 export const UNITS_ACROSS = 24;
+export const SIDE_UNITS_ACROSS = 45;
 
 export interface Params {
   format: Format;
@@ -59,6 +66,14 @@ export interface Params {
   day: string;
   timeStart: string;
   timeEnd: string;
+  artist2: string; // second artist (B2B); empty = none
+  info: string; // the small sentence block
+  layout: LayoutKind;
+  stack: StackKey[]; // one-stage layouts: the order of the block rows in the centred stack
+  free: Partial<Record<StackKey, [number, number]>>; // blocks dragged out of the stack: centre as fractions of W, H
+  stackY: number; // one-stage layouts: the stack's bottom edge as a fraction of H
+  logo: LogoPos;
+  logoColor: LogoColor;
   artist: string;
   stage: string;
   labelY: number; // 0..1, top of the artist label group as a fraction of H
@@ -114,6 +129,14 @@ export const DEFAULT_PARAMS: Params = {
   day: "Thursday 28.08",
   timeStart: "20:00",
   timeEnd: "21:00",
+  artist2: "",
+  info: "",
+  layout: "reveal",
+  stack: ["day", "time", "artist", "stage", "info"],
+  free: {},
+  stackY: (1350 - 103) / 1350,
+  logo: "off",
+  logoColor: "black",
   artist: "Chris Stussy",
   stage: "Main Stage",
   labelY: 401 / 679,
@@ -196,6 +219,20 @@ export const COLORWAYS: Colorway[] = [
   ["#FF63A0", "#E90062", "#F9FD5B", "#E90062"], // B31
   ["#1625F8", "#70FFDF", "#5002DC", "#8D5DF3"], // B32
 ];
+
+/** Number of label blocks a one-stage layout shows (stack and free blocks). */
+export function stackBlockCount(p: Params): number {
+  const wordsOf = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
+  let n = 0;
+  for (const key of STACK_KEYS) {
+    if (key === "day") n += wordsOf(p.day);
+    else if (key === "time") n += timeLabel(p) ? 1 : 0;
+    else if (key === "artist") n += wordsOf(p.artist) + (p.artist.trim() && p.artist2.trim() ? 1 + wordsOf(p.artist2) : 0);
+    else if (key === "stage") n += wordsOf(p.stage);
+    else if (key === "info") n += p.info.trim() ? 1 : 0;
+  }
+  return n;
+}
 
 /** 1-based index of the colourway matching the stripe colours, or 0 when custom. */
 export function colorwayIndex(c: Colors): number {
@@ -331,6 +368,7 @@ export interface Scene {
   unit: number; // px at 1x
   rows: RowSpec[];
   tl: Timeline;
+  layout: LayoutKind;
   seam: LabelClock; // stage + day on the closed card (clock = time hidden)
   artist: LabelClock; // times + artist + stage on the open card (clock = time shown)
   ease: (x: number) => number;
@@ -443,16 +481,28 @@ function intChain(
 export function buildScene(p: Params): Scene {
   const [W, H] = FORMATS[p.format];
   const S = Math.min(W, H);
-  const unit = S / UNITS_ACROSS;
-  const nTop = clampInt(p.rowsTop, 1, 24);
-  const nBot = clampInt(p.rowsBottom, 1, 24);
+  const layout = p.layout;
+  const oneStage = layout !== "reveal";
+  // Side blocks use the design's 24 px unit (at 1080); the others 45 px.
+  const unit = layout === "side" ? S / SIDE_UNITS_ACROSS : S / UNITS_ACROSS;
+  // Block row: thin strips (36 px at 1080) stacked at the top and bottom
+  // edges, as many as the row sliders say; none at all for "no blocks".
+  const stripH = (36 / 1080) * S;
+  const nTop = layout === "none" ? 0 : layout === "row" ? clampInt(p.rowsTop, 0, 8) : clampInt(p.rowsTop, 1, 24);
+  const nBot = layout === "none" ? 0 : layout === "row" ? clampInt(p.rowsBottom, 0, 8) : clampInt(p.rowsBottom, 1, 24);
   const n = nTop + nBot;
   const rows: RowSpec[] = [];
   for (let i = 0; i < n; i++) {
     const half: Focus = i < nTop ? "top" : "bottom";
-    const y0 = half === "top" ? (H / 2) * (i / nTop) : H / 2 + (H / 2) * ((i - nTop) / nBot);
-    const y1 =
-      half === "top" ? (H / 2) * ((i + 1) / nTop) : H / 2 + (H / 2) * ((i - nTop + 1) / nBot);
+    let y0: number;
+    let y1: number;
+    if (layout === "row") {
+      y0 = half === "top" ? i * stripH : H - (nBot - (i - nTop)) * stripH;
+      y1 = y0 + stripH;
+    } else {
+      y0 = half === "top" ? (H / 2) * (i / nTop) : H / 2 + (H / 2) * ((i - nTop) / nBot);
+      y1 = half === "top" ? (H / 2) * ((i + 1) / nTop) : H / 2 + (H / 2) * ((i - nTop + 1) / nBot);
+    }
     let rank: number;
     if (p.staggerOrder === "center") rank = half === "top" ? nTop - 1 - i : i - nTop;
     else if (p.staggerOrder === "top") rank = i;
@@ -481,6 +531,23 @@ export function buildScene(p: Params): Scene {
   }
   const maxRank = rows.reduce((m, r) => Math.max(m, r.rank), 0);
   const span = p.stagger * maxRank;
+  const labelD = LABEL_DURATION;
+  const labelStagger = p.stagger;
+  const groupSpan = (blocks: number) => (Math.max(1, blocks) - 1) * labelStagger + labelD;
+  if (oneStage) {
+    // One stage: the stripes move for the whole loop (rows held closed for
+    // the block row, open for the side blocks), the label blocks slide in
+    // once after Hold closed and stay; the loop is hold + entrance + hold.
+    const total = p.holdClosed + groupSpan(stackBlockCount(p)) + p.holdOpen;
+    const tl: Timeline = { tOpen: 0, tOpenEnd: 0, tClose: total, tCloseEnd: total, total, span: 0 };
+    const clock: LabelClock = { openAt: p.holdClosed, openD: labelD, openStagger: labelStagger, closeAt: Infinity, closeD: labelD, closeStagger: labelStagger };
+    for (const r of rows) {
+      r.delay = 0;
+      r.closeDelay = -p.duration; // the stripe chain's return move lands exactly on the loop point
+      r.m0 = 1;
+    }
+    return finishScene(p, W, H, S, unit, rows, nTop, tl, clock, clock, bezierEase(p.easing), layout);
+  }
   const tOpen = p.holdClosed;
   const tOpenEnd = tOpen + p.duration + span;
   const tClose = tOpenEnd + p.holdOpen;
@@ -498,16 +565,13 @@ export function buildScene(p: Params): Scene {
   const bottomDelay = p.stagger * bottomRow.rank;
   const bottomCloseDelay = span - bottomDelay;
   const seamBlocks = wordsOf(p.stage) + wordsOf(p.day);
-  const artistBlocks = (timeLabel(p) ? 1 : 0) + wordsOf(p.artist) + wordsOf(p.stage);
+  const artistBlocks = (timeLabel(p) ? 1 : 0) + wordsOf(p.artist) + (p.artist.trim() && p.artist2.trim() ? 1 + wordsOf(p.artist2) : 0) + wordsOf(p.stage);
   const seamDelay = Math.min(p.stagger * rows[nTop - 1].rank, p.stagger * (rows[nTop]?.rank ?? Infinity));
   const seamOpenAt = tOpen + seamDelay;
   // One pace for every label move: 1 s per block and one row stagger
   // between blocks. Nothing speeds up to avoid overlap:
   // the artist group waits until the seam blocks are gone, and the seam
   // blocks come back once the artist group is gone.
-  const labelD = LABEL_DURATION;
-  const labelStagger = p.stagger;
-  const groupSpan = (blocks: number) => (Math.max(1, blocks) - 1) * labelStagger + labelD;
   const artistOpenAt = Math.max(tOpen + bottomDelay + 1.5 * p.stagger, seamOpenAt + groupSpan(seamBlocks) + 0.05);
   const artist: LabelClock = {
     openAt: artistOpenAt,
@@ -528,7 +592,28 @@ export function buildScene(p: Params): Scene {
   };
   const total = seam.closeAt + groupSpan(seamBlocks);
   const tl: Timeline = { tOpen, tOpenEnd, tClose, tCloseEnd, total, span };
+  return finishScene(p, W, H, S, unit, rows, nTop, tl, seam, artist, ease, layout);
+}
+
+/** The part of the scene build shared by every layout: row shapes, chains and floaters. */
+function finishScene(
+  p: Params,
+  W: number,
+  H: number,
+  S: number,
+  unit: number,
+  rows: RowSpec[],
+  nTop: number,
+  tl: Timeline,
+  seam: LabelClock,
+  artist: LabelClock,
+  ease: (x: number) => number,
+  layout: LayoutKind,
+): Scene {
+  const n = rows.length;
   const T = tl.total;
+  const tOpen = tl.tOpen;
+  const tClose = tl.tClose;
 
   const moveMin = Math.max(0.2, Math.min(p.moveMin, p.moveMax));
   const moveMax = Math.max(moveMin, p.moveMax);
@@ -546,11 +631,13 @@ export function buildScene(p: Params): Scene {
   const baseUnits = Math.round(((1 - open) * (W / 2)) / unit);
   for (const r of rows) {
     const k = r.index;
-    r.delay = p.stagger * r.rank;
-    r.closeDelay = span - r.delay;
+    if (layout === "reveal") {
+      r.delay = p.stagger * r.rank;
+      r.closeDelay = tl.span - r.delay;
+      r.m0 = r.half === p.focus ? 3 : 1;
+    }
     // Stripe phase: stratified so neighbouring rows don't form a staircase.
     r.phase = ((((k * 0.618) % 1) + rand(p.blockSeed, k, 1) * 0.6) % 1) * 2;
-    r.m0 = r.half === p.focus ? 3 : 1;
     const yc = (r.y0 + r.y1) / 2;
     const hill = Math.abs(yc - H / 2) / (H / 2);
     const sides: ("remL" | "remR")[] = ["remL", "remR"];
@@ -672,7 +759,7 @@ export function buildScene(p: Params): Scene {
     }
   }
 
-  return { W, H, S, unit, rows, tl, seam, artist, ease, labelEase: bezierEase(LABEL_EASING) };
+  return { W, H, S, unit, rows, tl, layout, seam, artist, ease, labelEase: bezierEase(LABEL_EASING) };
 }
 
 /**
@@ -717,6 +804,8 @@ function blockProgress(scene: Scene, c: LabelClock, g: number, n: number, t: num
 
 /** Row opening progress 0..1 at time t (seconds into the loop). */
 export function rowProgress(scene: Scene, p: Params, r: RowSpec, t: number): number {
+  if (scene.layout === "side") return 1;
+  if (scene.layout !== "reveal") return 0;
   return segmentProgress(
     scene,
     t,
@@ -777,7 +866,9 @@ export interface Rect {
 
 /** What the renderer laid out, for on-canvas interaction (at the render scale). */
 export interface Layout {
-  artistRect: Rect | null; // the artist label group while it is visible
+  artistRect: Rect | null; // reveal: the artist label group while it is visible
+  stackRect: Rect | null; // one-stage: the centred stack
+  blocks: Partial<Record<StackKey, Rect>>; // one-stage: every block row (full size, for dragging)
 }
 
 /** Cover-fit placement of the background image (shared with drag-to-pan). */
@@ -840,25 +931,31 @@ interface LabelStyle {
   padBottom: number;
   padX: number;
   upper: boolean;
+  tracking: number; // em
 }
 const D = 540;
-const STYLE_BIG: LabelStyle = { fs: 72 / D, padTop: 12 / D, padBottom: 24 / D, padX: 3 / D, upper: false };
-const STYLE_SMALL: LabelStyle = { fs: 36 / D, padTop: 18 / D, padBottom: 18 / D, padX: 3 / D, upper: true };
-const STYLE_TINY: LabelStyle = { fs: 18 / D, padTop: 18 / D, padBottom: 18 / D, padX: 3 / D, upper: false };
+const STYLE_BIG: LabelStyle = { fs: 72 / D, padTop: 12 / D, padBottom: 24 / D, padX: 3 / D, upper: false, tracking: LABEL_TRACKING };
+const STYLE_SMALL: LabelStyle = { fs: 36 / D, padTop: 18 / D, padBottom: 18 / D, padX: 3 / D, upper: true, tracking: LABEL_TRACKING };
+const STYLE_TINY: LabelStyle = { fs: 18 / D, padTop: 18 / D, padBottom: 18 / D, padX: 3 / D, upper: false, tracking: LABEL_TRACKING };
+// the small sentence (24 px at 1080, no tracking, one block)
+const STYLE_SENTENCE: LabelStyle = { fs: 12 / D, padTop: 12 / D, padBottom: 12 / D, padX: 3 / D, upper: false, tracking: 0 };
 const LABEL_GAP = 4.5 / D;
 
 interface Block {
   text: string;
   w: number;
-}
-interface LabelRow {
-  blocks: Block[];
+  h: number;
   fs: number;
   padX: number;
   padTop: number;
   capH: number;
+  tracking: number;
+}
+interface LabelRow {
+  blocks: Block[];
   w: number;
   h: number;
+  shift: number; // px added to the row centre (the B2B row is centred as if the badge had a twin on the right)
 }
 
 function labelFont(fs: number, family: string) {
@@ -866,9 +963,9 @@ function labelFont(fs: number, family: string) {
 }
 
 /** Apply the label tracking where the canvas supports it (Chrome, Safari 17.4+). */
-function setTracking(ctx: CanvasRenderingContext2D, fs: number) {
+function setTracking(ctx: CanvasRenderingContext2D, fs: number, tracking: number) {
   if ("letterSpacing" in ctx) {
-    (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = `${LABEL_TRACKING * fs}px`;
+    (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = `${tracking * fs}px`;
   }
 }
 
@@ -877,6 +974,37 @@ function words(text: string, upper: boolean): string[] {
   return t.trim().split(/\s+/).filter(Boolean);
 }
 
+function measureBlocks(ctx: CanvasRenderingContext2D, texts: string[], style: LabelStyle, S: number, family: string, fs: number): Block[] {
+  const padX = style.padX * S;
+  const padTop = style.padTop * S;
+  const padBottom = style.padBottom * S;
+  ctx.font = labelFont(fs, family);
+  setTracking(ctx, fs, style.tracking);
+  const capH = ctx.measureText("H").actualBoundingBoxAscent || fs * 0.7;
+  // the canvas adds the tracking after the last glyph too; Figma does not
+  const trail = Math.abs(style.tracking * fs);
+  return texts.map((text) => ({
+    text,
+    w: ctx.measureText(text).width + trail + 2 * padX,
+    h: padTop + capH + padBottom,
+    fs,
+    padX,
+    padTop,
+    capH,
+    tracking: style.tracking,
+  }));
+}
+
+function rowOf(blocks: Block[], gap: number, shift = 0): LabelRow {
+  return {
+    blocks,
+    w: blocks.reduce((a, b) => a + b.w, 0) + gap * (blocks.length - 1),
+    h: blocks.reduce((a, b) => Math.max(a, b.h), 0),
+    shift,
+  };
+}
+
+/** One row of blocks, the font shrunk when the row would not fit `maxW`. */
 function layoutRow(
   ctx: CanvasRenderingContext2D,
   texts: string[],
@@ -887,33 +1015,54 @@ function layoutRow(
   family: string,
 ): LabelRow | null {
   if (!texts.length) return null;
-  const padX = style.padX * S;
-  const padTop = style.padTop * S;
-  const padBottom = style.padBottom * S;
-  const measure = (fs: number) => {
-    ctx.font = labelFont(fs, family);
-    setTracking(ctx, fs);
-    const capH = ctx.measureText("H").actualBoundingBoxAscent || fs * 0.7;
-    // the canvas adds the tracking after the last glyph too; Figma does not
-    const trail = Math.abs(LABEL_TRACKING * fs);
-    const blocks = texts.map((text) => ({ text, w: ctx.measureText(text).width + trail + 2 * padX }));
-    const w = blocks.reduce((a, b) => a + b.w, 0) + gap * (blocks.length - 1);
-    return { fs, capH, blocks, w };
-  };
-  let r = measure(style.fs * S);
-  if (r.w > maxW) {
+  let blocks = measureBlocks(ctx, texts, style, S, family, style.fs * S);
+  let row = rowOf(blocks, gap);
+  if (row.w > maxW) {
+    const padX = style.padX * S;
     const fixed = 2 * padX * texts.length + gap * (texts.length - 1);
-    const text = r.w - fixed;
-    if (text > 0) r = measure(r.fs * Math.max(0.2, (maxW - fixed) / text));
+    const text = row.w - fixed;
+    if (text > 0) {
+      blocks = measureBlocks(ctx, texts, style, S, family, style.fs * S * Math.max(0.2, (maxW - fixed) / text));
+      row = rowOf(blocks, gap);
+    }
   }
-  return { blocks: r.blocks, fs: r.fs, padX, padTop, capH: r.capH, w: r.w, h: padTop + r.capH + padBottom };
+  return row;
+}
+
+/** Words wrapped into as many rows as needed to fit `maxW` (one-stage posters). */
+function wrapRows(
+  ctx: CanvasRenderingContext2D,
+  texts: string[],
+  style: LabelStyle,
+  S: number,
+  gap: number,
+  maxW: number,
+  family: string,
+): LabelRow[] {
+  if (!texts.length) return [];
+  const blocks = measureBlocks(ctx, texts, style, S, family, style.fs * S);
+  const lines: string[][] = [];
+  let cur: string[] = [];
+  let w = 0;
+  blocks.forEach((b, i) => {
+    const add = cur.length ? gap + b.w : b.w;
+    if (cur.length && w + add > maxW) {
+      lines.push(cur);
+      cur = [];
+      w = 0;
+    }
+    cur.push(texts[i]);
+    w += cur.length === 1 ? b.w : gap + b.w;
+  });
+  if (cur.length) lines.push(cur);
+  return lines.map((line) => layoutRow(ctx, line, style, S, gap, maxW, family)).filter((r): r is LabelRow => !!r);
 }
 
 /**
  * Draw one row of blocks; `reveal(i)` is block i's own 0..1. Every block is
  * masked on its own, growing from its own centre, and the row is laid out
  * from the blocks' current widths with the fixed gap and centred on `cx`
- * at every moment.
+ * at every moment. Blocks of different heights share the row's top edge.
  */
 function drawRow(
   ctx: CanvasRenderingContext2D,
@@ -931,12 +1080,11 @@ function drawRow(
   const vis = row.blocks.map((b, i) => b.w * clamp01(reveal(i)));
   if (!vis.some((v) => v >= 0.5)) return;
   const rowW = vis.reduce((a, v) => a + v, 0) + gap * (row.blocks.length - 1);
+  const maxFs = row.blocks.reduce((a, b) => Math.max(a, b.fs), 0);
   ctx.save();
-  ctx.font = labelFont(row.fs, family);
-  setTracking(ctx, row.fs);
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
-  let x = cx - rowW / 2;
+  let x = cx + row.shift - rowW / 2;
   row.blocks.forEach((b, i) => {
     const vw = vis[i];
     if (vw >= 0.5) {
@@ -944,17 +1092,19 @@ function drawRow(
       ctx.beginPath();
       // the mask only limits the width; overshoots and descenders hang out
       // of the block top and bottom, as in the design
-      ctx.rect(x, top - row.fs, vw, row.h + 2 * row.fs);
+      ctx.rect(x, top - maxFs, vw, row.h + 2 * maxFs);
       ctx.clip();
       // the full block slides in from its side, never leaving the mask
       // uncovered: the offset is capped at the hidden half-width
       const r = clamp01(reveal(i));
       const off = Math.min(slide * (1 - r), (b.w - vw) / 2) * (dir(i) < 0 ? -1 : 1);
       const bx = x + vw / 2 - b.w / 2 + off;
+      ctx.font = labelFont(b.fs, family);
+      setTracking(ctx, b.fs, b.tracking);
       ctx.fillStyle = colors.labelBg;
-      ctx.fillRect(bx, top, b.w, row.h);
+      ctx.fillRect(bx, top, b.w, b.h);
       ctx.fillStyle = colors.labelText;
-      ctx.fillText(b.text, bx + row.padX, top + row.padTop + row.capH);
+      ctx.fillText(b.text, bx + b.padX, top + b.padTop + b.capH);
       ctx.restore();
     }
     x += vw + gap;
@@ -962,10 +1112,48 @@ function drawRow(
   ctx.restore();
 }
 
+/** The "B2B <second artist>" row: a tiny badge on the left, centred as if it had a twin on the right. */
+function b2bRow(ctx: CanvasRenderingContext2D, p: Params, S: number, gap: number, maxW: number, family: string): LabelRow | null {
+  const names = words(p.artist2, false);
+  if (!names.length) return null;
+  const badge = measureBlocks(ctx, ["B2B"], STYLE_TINY, S, family, STYLE_TINY.fs * S)[0];
+  const nameRow = layoutRow(ctx, names, STYLE_BIG, S, gap, maxW - 2 * (badge.w + gap), family);
+  if (!nameRow) return null;
+  return rowOf([badge, ...nameRow.blocks], gap, (badge.w + gap) / 2);
+}
+
+// ---------- logo ----------
+
+export interface LogoImages {
+  black: CanvasImageSource;
+  white: CanvasImageSource;
+  w: number; // natural size
+  h: number;
+  inkTop: number; // fraction of h above the first ink
+  inkBottom: number; // fraction of h at the last ink
+}
+let logoImages: LogoImages | null = null;
+/** The logo artwork is loaded by the app (it is not part of the engine). */
+export function setLogoImages(images: LogoImages | null) {
+  logoImages = images;
+}
+/** Where the logo sits at the render scale: the short side wide, centred, with equal margins top or bottom. */
+export function logoRect(p: Params, scene: Scene, scale: number): Rect | null {
+  if (!logoImages || p.logo === "off" || p.layout === "reveal") return null;
+  const W = scene.W * scale;
+  const H = scene.H * scale;
+  const S = scene.S * scale;
+  const w = S;
+  const h = (S * logoImages.h) / logoImages.w;
+  const x = (W - w) / 2;
+  const y = p.logo === "top" ? 0 : H - logoImages.inkTop * h - logoImages.inkBottom * h;
+  return { x, y, w, h };
+}
+
 /**
  * Render one frame. `scale` multiplies every pixel quantity so exports at 2x
  * are geometrically identical to the 1x preview. Returns the layout of the
- * interactive parts (the artist group) at that scale.
+ * interactive parts at that scale.
  */
 export function render(
   ctx: CanvasRenderingContext2D,
@@ -1031,67 +1219,129 @@ export function render(
     }
   }
 
-  // Labels. Stage + day sit on the seam of the closed card and fold out as
-  // the seam rows start opening; the artist group (times, name, stage)
-  // unfolds on its own clock at the height set by dragging it on the
-  // preview. Blocks come in one after another and leave in reverse order,
-  // on the soft label easing; rows stay centred.
+  const lr = logoRect(p, scene, scale);
+  if (lr && logoImages) ctx.drawImage(p.logoColor === "white" ? logoImages.white : logoImages.black, lr.x, lr.y, lr.w, lr.h);
+
   const fam = p.fontFamily || "Avantt";
   const gap = LABEL_GAP * S;
   const maxW = W * 0.92;
   const slide = 0.12 * S;
   const dirOf = (base: number) => (i: number) => (rand(p.blockSeed, 900 + base + i) < 0.5 ? -1 : 1);
+  const out: Layout = { artistRect: null, stackRect: null, blocks: {} };
 
-  const seamStage = layoutRow(ctx, words(p.stage, false), STYLE_BIG, S, gap, maxW, fam);
-  const seamDay = layoutRow(ctx, words(p.day, true), STYLE_SMALL, S, gap, maxW, fam);
-  const seamRows = [seamStage, seamDay].filter((r): r is LabelRow => !!r);
-  const seamN = seamRows.reduce((a, r) => a + r.blocks.length, 0);
-  const seamH = seamRows.reduce((a, r) => a + r.h, 0) + gap * (seamRows.length - 1);
-  let y = H / 2 - seamH / 2;
-  let seamFirst = 0;
-  for (const r of seamRows) {
-    const base = seamFirst;
-    drawRow(ctx, r, cx, y, gap, (i) => 1 - blockProgress(scene, scene.seam, base + i, seamN, t), dirOf(base), slide, p.colors, fam);
-    seamFirst += r.blocks.length;
-    y += r.h + gap;
+  if (scene.layout === "reveal") {
+    // Stage + day sit on the seam of the closed card and fold out as the
+    // seam rows start opening; the artist group (times, name, B2B, stage)
+    // unfolds on its own clock at the height set by dragging it on the
+    // preview. Blocks come in one after another and leave in reverse
+    // order, on the soft label easing; rows stay centred.
+    const seamStage = layoutRow(ctx, words(p.stage, false), STYLE_BIG, S, gap, maxW, fam);
+    const seamDay = layoutRow(ctx, words(p.day, true), STYLE_SMALL, S, gap, maxW, fam);
+    const seamRows = [seamStage, seamDay].filter((r): r is LabelRow => !!r);
+    const seamN = seamRows.reduce((a, r) => a + r.blocks.length, 0);
+    const seamH = seamRows.reduce((a, r) => a + r.h, 0) + gap * (seamRows.length - 1);
+    let y = H / 2 - seamH / 2;
+    let seamFirst = 0;
+    for (const r of seamRows) {
+      const base = seamFirst;
+      drawRow(ctx, r, cx, y, gap, (i) => 1 - blockProgress(scene, scene.seam, base + i, seamN, t), dirOf(base), slide, p.colors, fam);
+      seamFirst += r.blocks.length;
+      y += r.h + gap;
+    }
+
+    const times = layoutRow(ctx, timeLabel(p) ? [timeLabel(p)] : [], STYLE_TINY, S, gap, maxW, fam);
+    const name = layoutRow(ctx, words(p.artist, false), STYLE_BIG, S, gap, maxW, fam);
+    const b2b = name ? b2bRow(ctx, p, S, gap, maxW, fam) : null;
+    const stage2 = layoutRow(ctx, words(p.stage, true), STYLE_SMALL, S, gap, maxW, fam);
+    const groupRows = [times, name, b2b, stage2].filter((r): r is LabelRow => !!r);
+    if (groupRows.length) {
+      const gh = groupRows.reduce((a, r) => a + r.h, 0) + gap * (groupRows.length - 1);
+      const gw = groupRows.reduce((a, r) => Math.max(a, r.w), 0);
+      const top = Math.max(0, Math.min(H - gh, clamp01(p.labelY) * H));
+      const nBlocks = groupRows.reduce((a, r) => a + r.blocks.length, 0);
+      let first = 0;
+      let yy = top;
+      let anyOpen = 0;
+      for (const r of groupRows) {
+        const base = first;
+        drawRow(
+          ctx,
+          r,
+          cx,
+          yy,
+          gap,
+          (i) => {
+            const pr = blockProgress(scene, scene.artist, base + i, nBlocks, t);
+            anyOpen = Math.max(anyOpen, pr);
+            return pr;
+          },
+          dirOf(50 + base),
+          slide,
+          p.colors,
+          fam,
+        );
+        first += r.blocks.length;
+        yy += r.h + gap;
+      }
+      if (anyOpen > 0.5) out.artistRect = { x: cx - gw / 2, y: top, w: gw, h: gh };
+    }
+    ctx.restore();
+    return out;
   }
 
-  const times = layoutRow(ctx, timeLabel(p) ? [timeLabel(p)] : [], STYLE_TINY, S, gap, maxW, fam);
-  const name = layoutRow(ctx, words(p.artist, false), STYLE_BIG, S, gap, maxW, fam);
-  const stage2 = layoutRow(ctx, words(p.stage, true), STYLE_SMALL, S, gap, maxW, fam);
-  const groupRows = [times, name, stage2].filter((r): r is LabelRow => !!r);
-  let artistRect: Rect | null = null;
-  if (groupRows.length) {
-    const gh = groupRows.reduce((a, r) => a + r.h, 0) + gap * (groupRows.length - 1);
-    const gw = groupRows.reduce((a, r) => Math.max(a, r.w), 0);
-    const top = Math.max(0, Math.min(H - gh, clamp01(p.labelY) * H));
-    const nBlocks = groupRows.reduce((a, r) => a + r.blocks.length, 0);
-    let first = 0;
+  // One-stage posters: the blocks form a centred stack in the order of
+  // p.stack (bottom edge at stackY), blocks dragged out of it sit where
+  // they were dropped. Everything slides in once, in stack order, after
+  // Hold closed, and stays.
+  const items = new Map<StackKey, LabelRow[]>();
+  const hasArtist = !!p.artist.trim();
+  for (const key of STACK_KEYS) {
+    let rows: LabelRow[] = [];
+    if (key === "day") rows = wrapRows(ctx, words(p.day, true), STYLE_SMALL, S, gap, maxW, fam);
+    else if (key === "time") rows = [layoutRow(ctx, timeLabel(p) ? [timeLabel(p)] : [], STYLE_TINY, S, gap, maxW, fam)].filter((r): r is LabelRow => !!r);
+    else if (key === "artist") {
+      rows = wrapRows(ctx, words(p.artist, false), STYLE_BIG, S, gap, maxW, fam);
+      const b2b = rows.length ? b2bRow(ctx, p, S, gap, maxW, fam) : null;
+      if (b2b) rows.push(b2b);
+    } else if (key === "stage") rows = wrapRows(ctx, words(p.stage, hasArtist), hasArtist ? STYLE_SMALL : STYLE_BIG, S, gap, maxW, fam);
+    else if (key === "info") rows = [layoutRow(ctx, p.info.trim() ? [p.info.trim()] : [], STYLE_SENTENCE, S, gap, maxW, fam)].filter((r): r is LabelRow => !!r);
+    if (rows.length) items.set(key, rows);
+  }
+  const order = [...p.stack.filter((k) => items.has(k)), ...STACK_KEYS.filter((k) => items.has(k) && !p.stack.includes(k))];
+  const stacked = order.filter((k) => !p.free[k]);
+  const freeKeys = order.filter((k) => !!p.free[k]);
+  const heightOf = (rows: LabelRow[]) => rows.reduce((a, r) => a + r.h, 0) + gap * (rows.length - 1);
+  const widthOf = (rows: LabelRow[]) => rows.reduce((a, r) => Math.max(a, r.w + 2 * Math.abs(r.shift)), 0);
+  const nBlocks = order.reduce((a, k) => a + items.get(k)!.reduce((b, r) => b + r.blocks.length, 0), 0);
+  let g = 0; // block index on the entrance clock, stack first then free blocks
+  const drawItem = (key: StackKey, top: number, centreX: number) => {
+    const rows = items.get(key)!;
     let yy = top;
-    let anyOpen = 0;
-    for (const r of groupRows) {
-      const base = first;
-      drawRow(
-        ctx,
-        r,
-        cx,
-        yy,
-        gap,
-        (i) => {
-          const pr = blockProgress(scene, scene.artist, base + i, nBlocks, t);
-          anyOpen = Math.max(anyOpen, pr);
-          return pr;
-        },
-        dirOf(50 + base),
-        slide,
-        p.colors,
-        fam,
-      );
-      first += r.blocks.length;
+    for (const r of rows) {
+      const base = g;
+      drawRow(ctx, r, centreX, yy, gap, (i) => blockProgress(scene, scene.artist, base + i, nBlocks, t), dirOf(50 + base), slide, p.colors, fam);
+      g += r.blocks.length;
       yy += r.h + gap;
     }
-    if (anyOpen > 0.5) artistRect = { x: cx - gw / 2, y: top, w: gw, h: gh };
+    const w = widthOf(rows);
+    out.blocks[key] = { x: centreX - w / 2, y: top, w, h: heightOf(rows) };
+  };
+  if (stacked.length) {
+    const gh = stacked.reduce((a, k) => a + heightOf(items.get(k)!), 0) + gap * (stacked.length - 1);
+    const gw = stacked.reduce((a, k) => Math.max(a, widthOf(items.get(k)!)), 0);
+    const top = Math.max(0, Math.min(H - gh, clamp01(p.stackY) * H - gh));
+    let yy = top;
+    for (const key of stacked) {
+      drawItem(key, yy, cx);
+      yy += heightOf(items.get(key)!) + gap;
+    }
+    out.stackRect = { x: cx - gw / 2, y: top, w: gw, h: gh };
+  }
+  for (const key of freeKeys) {
+    const [fx, fy] = p.free[key]!;
+    const rows = items.get(key)!;
+    drawItem(key, clamp01(fy) * H - heightOf(rows) / 2, clamp01(fx) * W);
   }
   ctx.restore();
-  return { artistRect };
+  return out;
 }

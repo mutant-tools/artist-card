@@ -1,10 +1,14 @@
 # Motion Tool (Touquet 2027 artist card)
 
-Row-reveal artist card generator. Two halves of horizontal rows, each a strip
-of two-colour stripes, split at the centre seam and slide open to reveal a
-photo. The stage name and day sit on the closed card; the times, artist name
-and stage unfold as word blocks once the card is open. Exports PNG stills and
-one-loop H.264 MP4s (2x: 2160 wide, 60 fps, ~0.4 bit per pixel per frame).
+Artist card generator with four layout presets. **Reveal**: two halves of
+horizontal rows, each a strip of two-colour stripes, split at the centre
+seam and slide open to reveal a photo; the stage name and day sit on the
+closed card, the times, artist name and stage unfold as word blocks once
+the card is open. **No blocks**, **Block row** (thin strips at the top and
+bottom) and **Side blocks** are one-stage posters: the stripes move for the
+whole loop, the word blocks slide in once and stay. Exports PNG stills and
+one-loop H.264 MP4s (2x: 2160 wide, 60 fps, ~0.4 bit per pixel per frame),
+with music when an MP3 is loaded.
 
 The UI and the card follow the Figma design in Touquet-2027 (frames 229:94,
 232:1464); the label blocks reproduce its metrics exactly (Avantt Bold, -2%
@@ -28,11 +32,26 @@ The bundled default photo is `public/default.jpg`.
 
 Left column:
 
-- **Format** 4:5, 1:1, 16:9, 9:16 (1080-based canvases).
-- **Day, Time, Artist, Stage** every word becomes its own block. The day is
-  set in capitals, the stage is as typed on the closed card and in capitals
-  under the artist name. **Image** loads or removes the photo (or drop one
-  on the preview, paste one, or click an empty card).
+- **Format** 4:5, 1:1, 16:9, 9:16 (1080-based canvases). **Layout preset**
+  1 Reveal, 2 No blocks, 3 Block row, 4 Side blocks; a preset sets the row
+  counts and block width the design uses (Side blocks: 24 px units, block
+  width 3; Block row: strips of 36 px, Rows top / bottom = strips, 0 allowed).
+- **Day, Time, Artist, Stage, Info** every word becomes its own block. The
+  day is set in capitals, the stage is big when there is no artist and in
+  capitals under the artist name otherwise, the time is one block, the info
+  sentence one small block. **+** next to the artist adds a second artist
+  (two at most): the B2B badge sits in front of the second name. **Image**
+  loads or removes the photo (or drop one on the preview, paste one, or
+  click an empty card). **Music** loads an MP3: the strip above the card is
+  the whole track, the dark part the loop; drag it to set where the music
+  starts (the readout shows the start). The MP4 gets the MP3 frames from
+  that point, cut hard at the end, no re-encoding. **Logo** (one-stage
+  presets only) off, top or bottom, black or white.
+- **One-stage posters on the card** the blocks form a centred stack. Drag a
+  block up or down to reorder it (rows snap to the 9 px gap); drag it
+  sideways or out of the stack to detach it and drop it anywhere; bring it
+  back near the stack to snap it in again. Shift-drag moves the whole stack.
+  Order, detached positions and the stack height are in the link.
 - **Hold closed, Opening time, Opening %, Hold open** the loop is closed
   hold, open, open hold, close, then the seam labels fold back in (every
   label block opens and closes in 1 s, one row stagger apart, on a soft

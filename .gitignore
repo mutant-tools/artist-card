@@ -5,3 +5,4 @@ dist
 .vite
 public/test-*.png
 public/fonts/Avantt*
+public/logo.svg

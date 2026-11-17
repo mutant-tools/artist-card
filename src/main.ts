@@ -6,6 +6,7 @@ import {
   colorwayIndex,
   DEFAULT_PARAMS,
   FORMATS,
+  STACK_KEYS,
   buildScene,
   coverRect,
   render,
@@ -13,11 +14,17 @@ import {
   type Format,
   type ImageSource,
   type Layout,
+  type LayoutKind,
+  type LogoColor,
+  type LogoPos,
   type Params,
   type Scene,
+  type StackKey,
   type StaggerOrder,
 } from "./engine";
 import { exportMp4, exportPng, supportsVideoExport } from "./export";
+import { loadLogo } from "./logo";
+import { audioPackets, loadAudioFile, playAudio, stopAudio, PEAK_BINS, type AudioTrack } from "./audio";
 
 const FPS = 60; // frame counter, arrow-key stepping and MP4 export
 const TICKS_PER_SECOND = 15; // timeline tick pitch
@@ -42,7 +49,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 const params: Params = structuredClone(DEFAULT_PARAMS);
 let scene: Scene = buildScene(params);
 let image: ImageSource | null = null;
-let layout: Layout = { artistRect: null };
+let layout: Layout = { artistRect: null, stackRect: null, blocks: {} };
 let time = 0; // seconds into the loop
 let playing = false;
 
@@ -135,8 +142,10 @@ function readHash(): boolean {
   const obj: Record<string, unknown> = {};
   const def = flatten(DEFAULT_PARAMS);
   for (const [k, v] of q.entries()) {
-    if (!(k in def)) continue;
-    const value: unknown = typeof def[k] === "number" ? parseFloat(v) : k === "easing" ? v.split(",").map(Number) : v;
+    const freeKey = k.startsWith("free.");
+    if (!(k in def) && !freeKey) continue;
+    const value: unknown =
+      freeKey || k === "easing" ? v.split(",").map(Number) : k === "stack" ? v.split(",").filter(Boolean) : typeof def[k] === "number" ? parseFloat(v) : v;
     const path = k.split(".");
     let host = obj;
     for (const part of path.slice(0, -1)) {
@@ -153,6 +162,7 @@ function rebuild() {
   if (time > scene.tl.total) time = 0;
   buildTicks();
   syncTime();
+  if (audio) setAudioStart(audioStart);
   schedule();
 }
 
@@ -209,19 +219,28 @@ for (const ev of ["pointerup", "pointercancel"]) ticksEl.addEventListener(ev, ()
 new ResizeObserver(() => {
   const w = canvas.getBoundingClientRect().width;
   timelineEl.style.width = `${w}px`;
+  waveEl.style.width = `${w}px`;
   ticksWidth = Math.max(0, w - 50); // frame counter 40 + gap 10
   buildTicks();
   syncTime();
+  buildWave();
 }).observe(canvas);
 
 // ---------- playback ----------
 
 let playStart = 0;
 let playOffset = 0;
+let playLoops = 0;
 function tick(now: number) {
   if (!playing) return;
   const total = scene.tl.total;
-  time = total > 0 ? ((now - playStart) / 1000 + playOffset) % total : 0;
+  const elapsed = (now - playStart) / 1000 + playOffset;
+  time = total > 0 ? elapsed % total : 0;
+  const loops = total > 0 ? Math.floor(elapsed / total) : 0;
+  if (loops !== playLoops) {
+    playLoops = loops;
+    if (audio) playAudio(audio, audioStart + time);
+  }
   syncTime();
   draw();
   requestAnimationFrame(tick);
@@ -233,8 +252,11 @@ function setPlaying(p: boolean) {
   if (playing) {
     playStart = performance.now();
     playOffset = time;
+    playLoops = 0;
+    if (audio) playAudio(audio, audioStart + time);
     requestAnimationFrame(tick);
   } else {
+    stopAudio();
     schedule();
   }
 }
@@ -295,6 +317,41 @@ const setFormatUI = bindSeg<Format>("formatSeg", "format", (v) => {
   applyFormat();
   rebuild();
 });
+// Layout presets. Switching one sets the row counts and block width the
+// design uses for it; everything else stays as it is.
+const PRESET_DEFAULTS: Record<LayoutKind, Partial<Pick<Params, "rowsTop" | "rowsBottom" | "blockWidth">>> = {
+  reveal: { rowsTop: 4, rowsBottom: 4, blockWidth: 2 },
+  none: {},
+  row: { rowsTop: 2, rowsBottom: 2 },
+  side: { rowsTop: 4, rowsBottom: 4, blockWidth: 3 },
+};
+const logoRow = $<HTMLDivElement>("logoRow");
+const logoColorSeg = $<HTMLDivElement>("logoColorSeg");
+function syncLayoutUI() {
+  const reveal = params.layout === "reveal";
+  logoRow.hidden = reveal;
+  logoColorSeg.hidden = params.logo === "off";
+  setLogoUI(params.logo);
+  setLogoColorUI(params.logoColor);
+}
+const setLayoutUI = bindSeg<LayoutKind>("layoutSeg", "layout", (v) => {
+  if (v === params.layout) return;
+  params.layout = v;
+  Object.assign(params, PRESET_DEFAULTS[v]);
+  if (v === "reveal") params.logo = "off";
+  for (const def of stepDefs) syncStep(def.key);
+  syncLayoutUI();
+  rebuild();
+});
+const setLogoUI = bindSeg<LogoPos>("logoSeg", "logo", (v) => {
+  params.logo = v;
+  syncLayoutUI();
+  schedule();
+});
+const setLogoColorUI = bindSeg<LogoColor>("logoColorSeg", "logocolor", (v) => {
+  params.logoColor = v;
+  schedule();
+});
 function applyFormat() {
   const [W, H] = FORMATS[params.format];
   canvas.width = W;
@@ -344,8 +401,8 @@ const stepDefs: StepDef[] = [
   { key: "vignette", label: "Vignette %", min: 0, max: 100, step: 5, decimals: 0, container: "timingGroup", title: "How much the hole follows the falloff circle on the preview: 0 = two vertical lines, 100 = the circle" },
   { key: "faith", label: "Faith %", min: 0, max: 100, step: 5, decimals: 0, container: "timingGroup", title: "100 = the hole follows the falloff, 0 = complete chaos (a random width per row and side)" },
   { key: "holdOpen", label: "Hold open", min: 0, max: 30, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup" },
-  { key: "rowsTop", label: "Rows top", min: 1, max: 24, step: 1, decimals: 0, container: "rowsGroup" },
-  { key: "rowsBottom", label: "Rows bottom", min: 1, max: 24, step: 1, decimals: 0, container: "rowsGroup" },
+  { key: "rowsTop", label: "Rows top", min: 0, max: 24, step: 1, decimals: 0, container: "rowsGroup" },
+  { key: "rowsBottom", label: "Rows bottom", min: 0, max: 24, step: 1, decimals: 0, container: "rowsGroup" },
   { key: "stagger", label: "Rows stagger", min: 0, max: 1, step: 0.05, decimals: 2, container: "shapeGroup", title: "Seconds between rows; the closing runs in reverse order" },
   { key: "irregularity", label: "Irregularity %", min: 0, max: 100, step: 5, decimals: 0, container: "shapeGroup", title: "Extra blocks left standing per row and side, more towards the outer rows" },
   { key: "shapeSeed", label: "Shape seed", min: 0, max: 999999, step: 1, decimals: 0, container: "shapeGroup" },
@@ -420,7 +477,7 @@ for (const def of stepDefs) renderStep(def);
 // ---------- text ----------
 
 function bindText(id: string, apply: (v: string) => void) {
-  const el = $<HTMLInputElement>(id);
+  const el = $<HTMLInputElement>(id); // or a textarea: same value / input / focus API
   el.addEventListener("input", () => {
     apply(el.value);
     schedule();
@@ -435,6 +492,33 @@ const timeStartEl = bindText("timeStartText", (v) => (params.timeStart = v));
 const timeEndEl = bindText("timeEndText", (v) => (params.timeEnd = v));
 const artistEl = bindText("artistText", (v) => (params.artist = v));
 const stageTextEl = bindText("stageText", (v) => (params.stage = v));
+const artist2El = bindText("artist2Text", (v) => (params.artist2 = v));
+const infoEl = bindText("infoText", (v) => (params.info = v));
+const artist2Row = $<HTMLDivElement>("artist2Row");
+const artist2AddBtn = $<HTMLButtonElement>("artist2AddBtn");
+const artistLbl = $<HTMLSpanElement>("artistLbl");
+let artist2Shown = false;
+// Two artists at most: the + opens the second field and goes away, the
+// field's own button removes it again.
+function showArtist2(show: boolean) {
+  artist2Shown = show;
+  artist2Row.hidden = !show;
+  artist2AddBtn.hidden = show;
+  artistLbl.textContent = show ? "Artist 1" : "Artist";
+}
+artist2AddBtn.addEventListener("click", () => {
+  showArtist2(true);
+  rebuild();
+  artist2El.focus();
+});
+$<HTMLButtonElement>("artist2RemoveBtn").addEventListener("click", () => {
+  params.artist2 = "";
+  artist2El.value = "";
+  showArtist2(false);
+  rebuild();
+});
+// text changes can change the block count, which sets the loop length
+for (const el of [dayEl, timeStartEl, timeEndEl, artistEl, stageTextEl, artist2El, infoEl]) el.addEventListener("input", () => rebuild());
 document.fonts.addEventListener("loadingdone", () => schedule());
 
 // ---------- colours ----------
@@ -661,18 +745,78 @@ function overArtist(x: number, y: number): boolean {
   const r = layout.artistRect;
   return !!r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
-type DragMode = "none" | "label" | "pan" | "falloff";
+type DragMode = "none" | "label" | "pan" | "falloff" | "block" | "stack";
 let drag: DragMode = "none";
 let dragMoved = false;
 let lastX = 0;
 let lastY = 0;
+// One-stage layouts: every block row can be dragged. Inside the stack it
+// reorders (rows snap to the fixed gap), pulled sideways or out of the
+// stack it detaches and sits where it is dropped, brought back near the
+// stack it snaps in again. Shift-drag moves the whole stack.
+let dragKey: StackKey | null = null;
+let grabDX = 0; // pointer minus block centre at grab time (canvas px)
+let grabDY = 0;
+const DETACH = 40; // css px
+function blockAt(x: number, y: number): StackKey | null {
+  if (params.layout === "reveal") return null;
+  for (const key of [...STACK_KEYS].reverse()) {
+    const r = layout.blocks[key];
+    if (r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return key;
+  }
+  return null;
+}
+function stackedKeys(): StackKey[] {
+  return params.stack.filter((k) => layout.blocks[k] && !params.free[k]);
+}
+function dragBlock(px: number, py: number, k: number) {
+  const key = dragKey!;
+  const W = canvas.width;
+  const H = canvas.height;
+  const cxB = px - grabDX;
+  const cyB = py - grabDY;
+  const sr = layout.stackRect;
+  const stackCx = sr ? sr.x + sr.w / 2 : W / 2;
+  if (params.free[key]) {
+    params.free[key] = [clamp(cxB / W, 0, 1), clamp(cyB / H, 0, 1)];
+    // back near the stack: snap in at the row under the pointer
+    const nearX = Math.abs(cxB - stackCx) < (DETACH / 2) * k;
+    const nearY = !sr || (cyB > sr.y - (DETACH / 2) * k && cyB < sr.y + sr.h + (DETACH / 2) * k);
+    if (nearX && nearY) {
+      delete params.free[key];
+      reorderTo(key, cyB);
+    }
+  } else {
+    const away = Math.abs(cxB - stackCx) > DETACH * k || (sr && (cyB < sr.y - DETACH * k || cyB > sr.y + sr.h + DETACH * k));
+    if (away) params.free[key] = [clamp(cxB / W, 0, 1), clamp(cyB / H, 0, 1)];
+    else reorderTo(key, cyB);
+  }
+  schedule();
+}
+function reorderTo(key: StackKey, cy: number) {
+  const others = stackedKeys().filter((k) => k !== key);
+  const centreOf = (k: StackKey) => {
+    const r = layout.blocks[k]!;
+    return r.y + r.h / 2;
+  };
+  const sorted = [...others.map((k) => ({ k, y: centreOf(k) })), { k: key, y: cy }].sort((a, b) => a.y - b.y).map((o) => o.k);
+  const rest = params.stack.filter((k) => !sorted.includes(k));
+  params.stack = [...sorted, ...STACK_KEYS.filter((k) => rest.includes(k))];
+}
 canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   const pt = canvasPoint(e);
   if (!pt) return;
   const wasSelected = falloffSelected;
   falloffSelected = overFalloff(pt.x, pt.y, pt.k);
-  drag = falloffSelected ? "falloff" : overArtist(pt.x, pt.y) ? "label" : image ? "pan" : "none";
+  dragKey = falloffSelected ? null : blockAt(pt.x, pt.y);
+  if (dragKey) {
+    const r = layout.blocks[dragKey]!;
+    grabDX = pt.x - (r.x + r.w / 2);
+    grabDY = pt.y - (r.y + r.h / 2);
+    drag = e.shiftKey ? "stack" : "block";
+    canvas.classList.add("block-drag");
+  } else drag = falloffSelected ? "falloff" : overArtist(pt.x, pt.y) ? "label" : image ? "pan" : "none";
   if (wasSelected !== falloffSelected) schedule();
   dragMoved = false;
   lastX = e.clientX;
@@ -684,10 +828,12 @@ canvas.addEventListener("pointermove", (e) => {
   if (!pt) return;
   if (drag === "none") {
     const overF = overFalloff(pt.x, pt.y, pt.k);
-    const over = !overF && overArtist(pt.x, pt.y);
+    const overB = !overF && !!blockAt(pt.x, pt.y);
+    const over = !overF && !overB && overArtist(pt.x, pt.y);
     canvas.classList.toggle("falloff-hover", overF);
+    canvas.classList.toggle("block-hover", overB);
     canvas.classList.toggle("label-hover", over);
-    canvas.classList.toggle("pan", !overF && !over && !!image);
+    canvas.classList.toggle("pan", !overF && !overB && !over && !!image);
     return;
   }
   const dx = (e.clientX - lastX) * pt.k;
@@ -696,7 +842,14 @@ canvas.addEventListener("pointermove", (e) => {
   dragMoved = true;
   lastX = e.clientX;
   lastY = e.clientY;
-  if (drag === "falloff") {
+  if (drag === "block") {
+    dragBlock(pt.x, pt.y, pt.k);
+    return;
+  } else if (drag === "stack") {
+    params.stackY = clamp(params.stackY + dy / canvas.height, 0, 1);
+    schedule();
+    return;
+  } else if (drag === "falloff") {
     params.falloffX = clamp(params.falloffX + dx / canvas.width, 0, 1);
     params.falloffY = clamp(params.falloffY + dy / canvas.height, 0, 1);
     rebuild();
@@ -715,12 +868,13 @@ canvas.addEventListener("pointermove", (e) => {
 });
 for (const ev of ["pointerup", "pointercancel"]) {
   canvas.addEventListener(ev, () => {
-    canvas.classList.remove("panning");
+    canvas.classList.remove("panning", "block-drag");
     drag = "none";
+    dragKey = null;
   });
 }
 canvas.addEventListener("pointerleave", () => {
-  canvas.classList.remove("label-hover", "pan", "falloff-hover");
+  canvas.classList.remove("label-hover", "pan", "falloff-hover", "block-hover");
 });
 
 // The falloff handle: a small circle at the falloff centre, drag it to move
@@ -763,6 +917,101 @@ canvas.addEventListener("click", () => {
   }
   if (!image) fileInput.click();
 });
+
+// ---------- music ----------
+// An MP3 for the video. The strip above the card shows the whole track;
+// the dark part is the loop, dragged to where the music should start. The
+// export copies the MP3 frames into the MP4 from that point (no fade).
+
+const audioInput = $<HTMLInputElement>("audioInput");
+const audioRemoveBtn = $<HTMLButtonElement>("audioRemoveBtn");
+const waveEl = $<HTMLDivElement>("wave");
+const waveTimeEl = $<HTMLButtonElement>("waveTime");
+const waveTicksEl = $<HTMLDivElement>("waveTicks");
+let audio: AudioTrack | null = null;
+let audioStart = 0; // s into the track where the loop starts
+let waveBars: HTMLElement[] = [];
+function fmtTime(s: number): string {
+  const m = Math.floor(s / 60);
+  return `${m}:${String(Math.floor(s - m * 60)).padStart(2, "0")}`;
+}
+function buildWave() {
+  if (!audio) return;
+  const n = Math.max(2, ticksWidth > 0 ? Math.floor((ticksWidth + 2.5) / 5.5) : 90);
+  if (n !== waveBars.length) {
+    waveTicksEl.innerHTML = "";
+    waveBars = [];
+    for (let i = 0; i < n; i++) {
+      const el = document.createElement("i");
+      waveTicksEl.appendChild(el);
+      waveBars.push(el);
+    }
+  }
+  const per = PEAK_BINS / n;
+  waveBars.forEach((el, i) => {
+    let m = 0;
+    for (let j = Math.floor(i * per); j < Math.min(PEAK_BINS, Math.ceil((i + 1) * per)); j++) m = Math.max(m, audio!.peaks[j]);
+    el.style.height = `${Math.round(4 + 24 * m)}px`;
+  });
+  syncWave();
+}
+function syncWave() {
+  if (!audio) return;
+  const n = waveBars.length;
+  const a = Math.floor((audioStart / audio.duration) * n);
+  const b = Math.ceil(((audioStart + scene.tl.total) / audio.duration) * n);
+  waveBars.forEach((el, i) => el.classList.toggle("on", i >= a && i < b));
+  waveTimeEl.textContent = fmtTime(audioStart);
+}
+function setAudioStart(s: number) {
+  if (!audio) return;
+  audioStart = clamp(s, 0, Math.max(0, audio.duration - scene.tl.total));
+  syncWave();
+  if (playing) playAudio(audio, audioStart + time);
+}
+async function loadAudio(file: File) {
+  try {
+    audio = await loadAudioFile(file);
+  } catch (e) {
+    console.error("[audio]", e);
+    alert("That file could not be decoded. Use an MP3.");
+    return;
+  }
+  audioStart = 0;
+  waveEl.hidden = false;
+  audioRemoveBtn.disabled = false;
+  buildWave();
+  if (playing) playAudio(audio, audioStart + time);
+}
+$<HTMLButtonElement>("audioLoadBtn").addEventListener("click", () => audioInput.click());
+audioInput.addEventListener("change", () => {
+  const f = audioInput.files?.[0];
+  if (f) void loadAudio(f);
+  audioInput.value = "";
+});
+audioRemoveBtn.addEventListener("click", () => {
+  stopAudio();
+  audio = null;
+  waveEl.hidden = true;
+  audioRemoveBtn.disabled = true;
+});
+let waveDrag = false;
+function waveAt(clientX: number) {
+  if (!audio) return;
+  const r = waveTicksEl.getBoundingClientRect();
+  if (r.width <= 0) return;
+  setAudioStart(clamp((clientX - r.left) / r.width, 0, 1) * audio.duration);
+}
+waveTicksEl.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  waveDrag = true;
+  waveTicksEl.setPointerCapture(e.pointerId);
+  waveAt(e.clientX);
+});
+waveTicksEl.addEventListener("pointermove", (e) => {
+  if (waveDrag) waveAt(e.clientX);
+});
+for (const ev of ["pointerup", "pointercancel"]) waveTicksEl.addEventListener(ev, () => (waveDrag = false));
 
 // Scroll over the card: zoom the photo about the pointer.
 // Scroll elsewhere in the preview: resize the preview.
@@ -876,7 +1125,37 @@ function applySettings(str: string): boolean {
     params.labelY = clamp(obj.labelY, 0, 1);
     applied++;
   }
-  for (const k of ["day", "timeStart", "timeEnd", "artist", "stage"] as const) {
+  if (obj.layout === "reveal" || obj.layout === "none" || obj.layout === "row" || obj.layout === "side") {
+    params.layout = obj.layout;
+    applied++;
+  }
+  if (obj.logo === "off" || obj.logo === "top" || obj.logo === "bottom") {
+    params.logo = params.layout === "reveal" ? "off" : obj.logo;
+    applied++;
+  }
+  if (obj.logoColor === "black" || obj.logoColor === "white") {
+    params.logoColor = obj.logoColor;
+    applied++;
+  }
+  if (Array.isArray(obj.stack)) {
+    const keys = (obj.stack as unknown[]).filter((k): k is StackKey => typeof k === "string" && (STACK_KEYS as string[]).includes(k));
+    params.stack = [...new Set(keys), ...STACK_KEYS.filter((k) => !keys.includes(k))];
+    applied++;
+  }
+  if (obj.free && typeof obj.free === "object" && !Array.isArray(obj.free)) {
+    const free: Params["free"] = {};
+    for (const [k, v] of Object.entries(obj.free as Record<string, unknown>)) {
+      if ((STACK_KEYS as string[]).includes(k) && Array.isArray(v) && v.length === 2 && v.every((x) => typeof x === "number" && Number.isFinite(x)))
+        free[k as StackKey] = [clamp(v[0] as number, 0, 1), clamp(v[1] as number, 0, 1)];
+    }
+    params.free = free;
+    applied++;
+  }
+  if (typeof obj.stackY === "number" && Number.isFinite(obj.stackY)) {
+    params.stackY = clamp(obj.stackY, 0, 1);
+    applied++;
+  }
+  for (const k of ["day", "timeStart", "timeEnd", "artist", "stage", "artist2", "info"] as const) {
     if (typeof obj[k] === "string") {
       params[k] = (obj[k] as string).slice(0, 200);
       applied++;
@@ -923,6 +1202,11 @@ pasteBtn.addEventListener("click", async () => {
 function syncUI() {
   setFormatUI(params.format);
   setOrderUI(params.staggerOrder);
+  setLayoutUI(params.layout);
+  syncLayoutUI();
+  artist2El.value = params.artist2;
+  infoEl.value = params.info;
+  showArtist2(!!params.artist2 || artist2Shown);
   for (const def of stepDefs) syncStep(def.key);
   dayEl.value = params.day;
   timeStartEl.value = params.timeStart;
@@ -962,9 +1246,18 @@ exportMp4Btn.addEventListener("click", async () => {
   exportMp4Btn.disabled = true;
   exportPngBtn.disabled = true;
   try {
-    await exportMp4(snap.p, snap.scene, EXPORT_SCALE, FPS, snap.image, (f) => {
-      exportMp4Btn.textContent = `Encoding ${Math.round(f * 100)}%`;
-    });
+    const packets = audio ? await audioPackets(audio, audioStart, snap.scene.tl.total) : null;
+    await exportMp4(
+      snap.p,
+      snap.scene,
+      EXPORT_SCALE,
+      FPS,
+      snap.image,
+      (f) => {
+        exportMp4Btn.textContent = `Encoding ${Math.round(f * 100)}%`;
+      },
+      packets,
+    );
   } catch (err) {
     console.error("[export]", err);
     const msg = err instanceof Error ? err.message : String(err);
@@ -1035,6 +1328,7 @@ function loadDefaultImage() {
 applyFormat();
 setImage(null);
 loadDefaultImage();
+void loadLogo(`${import.meta.env.BASE_URL}logo.svg`).then(() => schedule());
 syncUI();
 if (!readHash()) rebuild();
 window.addEventListener("hashchange", () => {

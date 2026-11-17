@@ -27,6 +27,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 * {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -115,8 +116,30 @@ html, body {
 .row.field { gap: 12px; }
 .row.field > .lbl { flex: 0 0 50px; }
 .row.field > input,
+.row.field > textarea,
 .row.field > .seg,
+.row.field > .with-btn,
 .row.field > .pair { flex: 1 1 0; min-width: 0; }
+.row.field > .seg.colour { flex: 0 0 93px; }
+.row.field > .with-btn { display: flex; gap: var(--row-gap); }
+.with-btn > input { flex: 1 1 0; min-width: 0; }
+.row.field.tall { height: 46px; }
+.titles { display: flex; justify-content: space-between; gap: var(--gap); }
+textarea {
+  height: 46px;
+  padding: 12px 6px 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--surface);
+  text-align: right;
+  outline: none;
+  resize: none;
+  line-height: 11px;
+  overflow: hidden;
+  -webkit-appearance: none;
+  appearance: none;
+}
+textarea:focus { background: var(--surface-hover); }
 .row.field > .pair {
   display: flex;
   gap: var(--row-gap);
@@ -232,6 +255,8 @@ input[type="text"].center { text-align: center; }
 #canvas.panning { cursor: grabbing; }
 #canvas.label-hover { cursor: ns-resize; }
 #canvas.falloff-hover { cursor: move; }
+#canvas.block-hover { cursor: grab; }
+#canvas.block-drag { cursor: grabbing; }
 #canvas.empty { cursor: pointer; }
 .stage.dragover #canvas { outline: 2px dashed var(--text); outline-offset: -2px; }
 
@@ -272,6 +297,13 @@ input[type="text"].center { text-align: center; }
   flex: 0 0 3px;
 }
 .ticks > i.on { background: var(--text); }
+
+/* the music strip: bar heights follow the track, the loop window is dark */
+.timeline.wave { align-items: center; height: 28px; }
+.timeline.wave .frame { align-items: center; height: 28px; }
+.timeline.wave .ticks { height: 28px; align-items: center; }
+.timeline.wave .ticks > i { height: 4px; min-height: 4px; }
+.timeline.wave .ticks > i.on { background: var(--text); }
 
 /* ---------- COLOUR PICKER ---------- */
 .color-popover {
