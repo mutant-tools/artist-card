@@ -54,7 +54,8 @@ Left column:
   snap to the 9 px gap); drag it out above or below the stack to detach it
   at its own height; bring it back near the stack to snap it in again.
   Shift-drag on any block, or anywhere on the stack, moves the whole
-  attached collection. Blocks slide in after Hold closed and leave again in
+  attached collection. Backspace while holding a block clears its text, so
+  the row disappears. Blocks slide in after Hold closed and leave again in
   reverse order, so the loop is seamless. Order, detached heights and the
   stack height are in the link. Shift while dragging the falloff handle
   snaps it to the centre lines.

@@ -273,6 +273,12 @@ document.addEventListener("keydown", (e) => {
   const tag = t?.tagName ?? "";
   if (t?.isContentEditable || tag === "TEXTAREA" || tag === "SELECT" || tag === "INPUT") return;
   if (e.metaKey || e.ctrlKey) return;
+  if ((e.key === "Backspace" || e.key === "Delete") && drag === "block" && dragKey) {
+    // Backspace while holding a block row clears its text, so the row goes
+    e.preventDefault();
+    clearBlock(dragKey);
+    return;
+  }
   if (e.key === "Escape" && falloffSelected) {
     falloffSelected = false;
     schedule();
@@ -792,6 +798,21 @@ function dragBlock(py: number, k: number) {
     else reorderTo(key, cyB);
   }
   schedule();
+}
+function clearBlock(key: StackKey) {
+  if (key === "day") dayEl.value = params.day = "";
+  else if (key === "time") timeStartEl.value = timeEndEl.value = params.timeStart = params.timeEnd = "";
+  else if (key === "artist") {
+    artistEl.value = params.artist = "";
+    artist2El.value = params.artist2 = "";
+    showArtist2(false);
+  } else if (key === "stage") stageTextEl.value = params.stage = "";
+  else if (key === "info") infoEl.value = params.info = "";
+  delete params.free[key];
+  drag = "none";
+  dragKey = null;
+  canvas.classList.remove("block-drag", "block-hover");
+  rebuild();
 }
 function reorderTo(key: StackKey, cy: number) {
   const others = stackedKeys().filter((k) => k !== key);
