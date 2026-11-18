@@ -1,15 +1,14 @@
 // Artist Card plugin: rebuilds a card from the tool's "Send to Figma" /
 // "Copy for Figma" description as native, editable layers.
 //
-// Card (auto-layout: its one flowing child is the text stack, pinned to the
-//       top or bottom edge and centred, so edits re-flow)
-//   Photo            image fill, absolute
-//   Strips           absolute; one group of rectangles per row, plus Floaters
-//   Logo             vectors, absolute
-//   Text             vertical auto-layout, centred
+// Card (a plain frame)
+//   Photo            image fill
+//   Strips           one group of rectangles per row, plus Floaters
+//   Logo             one vector (the SVG flattened, fills kept per region)
+//   Text             vertical auto-layout hugging its rows, centred; free to move
 //     <row>          horizontal auto-layout
 //       <word>       auto-layout with the padding, filled; editable text
-//   <free rows>      card-wide hug-height wrapper, absolute at its height
+//   <free rows>      the same, one little stack per block pulled out
 
 figma.showUI(__html__, { width: 1440, height: 900, themeColors: true });
 
@@ -67,30 +66,21 @@ async function build(spec) {
   const stack = spec.stack;
   const anchor = stack ? stack.anchor : "top";
 
-  // the card: an auto-layout frame whose flowing child is the text stack
+  // the card: a plain frame, everything in it free to move
   const card = figma.createFrame();
   card.name = spec.name || "Artist card";
-  card.layoutMode = "VERTICAL";
   card.resize(W, H);
-  card.primaryAxisSizingMode = "FIXED";
-  card.counterAxisSizingMode = "FIXED";
-  card.counterAxisAlignItems = "CENTER";
-  card.primaryAxisAlignItems = anchor === "bottom" ? "MAX" : "MIN";
-  card.paddingTop = stack && anchor === "top" ? Math.max(0, stack.top) : 0;
-  card.paddingBottom = stack && anchor === "bottom" ? Math.max(0, H - stack.bottom) : 0;
   card.clipsContent = true;
   card.fills = [];
   const c = figma.viewport.center;
   card.x = Math.round(c.x - W / 2);
   card.y = Math.round(c.y - H / 2);
 
-  // a child that sits where it is, outside the flow
-  const pin = (node, x, y) => {
+  const place = (node, x, y, constraints) => {
     card.appendChild(node);
-    node.layoutPositioning = "ABSOLUTE";
     node.x = x;
     node.y = y;
-    node.constraints = { horizontal: "SCALE", vertical: "SCALE" };
+    node.constraints = constraints || { horizontal: "SCALE", vertical: "SCALE" };
   };
 
   // photo
@@ -99,7 +89,7 @@ async function build(spec) {
   photo.name = "Photo";
   photo.resize(W, H);
   photo.fills = [{ type: "IMAGE", scaleMode: "FILL", imageHash: image.hash }];
-  pin(photo, 0, 0);
+  place(photo, 0, 0);
 
   // strips: one group per row, floaters together
   const shapes = spec.shapes || [];
@@ -130,16 +120,32 @@ async function build(spec) {
       g.name = "Row " + (row + 1);
     }
     if (floaters.length) figma.group(floaters, strips).name = "Floaters";
-    pin(strips, 0, 0);
+    place(strips, 0, 0);
   }
 
-  // logo: the SVG as vectors
+  // logo: the SVG, flattened to one vector (its region fills survive)
   if (spec.logo && spec.logo.svg) {
     const src = spec.logo.color === "white" ? spec.logo.svg.replace(/fill="black"/g, 'fill="white"') : spec.logo.svg;
-    const logo = figma.createNodeFromSvg(src);
+    const frame = figma.createNodeFromSvg(src);
+    frame.resize(spec.logo.w, spec.logo.h);
+    place(frame, spec.logo.x, spec.logo.y);
+    // where the ink sits inside the frame, to put the vector back there
+    let ix = 0;
+    let iy = 0;
+    if (frame.children.length) {
+      ix = frame.children[0].x;
+      iy = frame.children[0].y;
+    }
+    let logo = frame;
+    try {
+      logo = figma.flatten([frame]);
+      logo.x = spec.logo.x + ix;
+      logo.y = spec.logo.y + iy;
+      logo.constraints = { horizontal: "SCALE", vertical: "SCALE" };
+    } catch (e) {
+      // flatten unavailable: the frame of vectors stays
+    }
     logo.name = "Logo";
-    logo.resize(spec.logo.w, spec.logo.h);
-    pin(logo, spec.logo.x, spec.logo.y);
   }
 
   const stackFrame = (name) => {
@@ -201,34 +207,25 @@ async function build(spec) {
     return f;
   };
 
+  // the stack: a hugging auto-layout frame, centred at its height, free to move
   const rows = spec.rows || [];
   const stacked = rows.filter((r) => r.stacked);
   if (stacked.length && stack) {
     const s = stackFrame("Text");
     for (const r of stacked) s.appendChild(row(r));
-    card.appendChild(s); // the flowing child: pinned to the edge, centred
+    const y = anchor === "bottom" ? stack.bottom - s.height : stack.top;
+    place(s, (W - s.width) / 2, y, { horizontal: "CENTER", vertical: anchor === "bottom" ? "MAX" : "MIN" });
   }
-  // free rows: consecutive rows of one key form their own little stack, in
-  // a card-wide wrapper as high as themselves so they stay centred on edit
+  // free rows: consecutive rows of one key form their own little stack
   let i = 0;
   const free = rows.filter((r) => !r.stacked);
   while (i < free.length) {
     const key = free[i].key;
     const group = [];
     while (i < free.length && free[i].key === key) group.push(free[i++]);
-    const wrap = figma.createFrame();
-    wrap.name = key;
-    wrap.fills = [];
-    wrap.clipsContent = false;
-    wrap.layoutMode = "HORIZONTAL";
-    wrap.resize(W, group[0].h);
-    wrap.primaryAxisSizingMode = "FIXED";
-    wrap.counterAxisSizingMode = "AUTO";
-    wrap.primaryAxisAlignItems = "CENTER";
     const s = stackFrame(key);
     for (const r of group) s.appendChild(row(r));
-    wrap.appendChild(s);
-    pin(wrap, 0, group[0].top);
+    place(s, (W - s.width) / 2, group[0].top, { horizontal: "CENTER", vertical: "MIN" });
   }
   return card;
 }

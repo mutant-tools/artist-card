@@ -127,10 +127,9 @@ Right column:
 editable layers: the photo as an image, every stripe and floater a
 rectangle (grouped per row), the logo as vectors, every text block an
 auto-layout frame with the tool's padding, fill, font size and tracking
-and editable cap-height-trimmed text. The card itself is the auto-layout:
-the text stack is its one flowing child, pinned to the top or bottom edge
-and centred, so edits re-flow and stay centred; everything else is
-absolute. Only the frame shown in the preview is taken (set
+and editable cap-height-trimmed text, the stack one hugging auto-layout
+frame that is free to move (edits re-flow inside it: rows stay centred
+on the stack, the stack grows from its left edge). Only the frame shown in the preview is taken (set
 the time first). The text is set in Avantt Bold, which has to be installed
 on that machine (Inter Bold stands in otherwise, with a note).
 
