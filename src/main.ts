@@ -1493,8 +1493,8 @@ const figmaBtn = $<HTMLButtonElement>("figmaBtn");
 figmaBtn.textContent = IN_PLUGIN ? "Send to Figma" : "Copy for Figma";
 figmaBtn.title = IN_PLUGIN
   ? "Build the frame shown in the preview as editable Figma layers"
-  : "Copy the frame shown in the preview for the Artist Card Figma plugin (paste it there)";
-async function figmaSpec(bgType: "image/png" | "image/jpeg" = "image/png") {
+  : "Copy the frame shown in the preview as SVG: paste it in Figma (editable text), or in the Artist Card plugin (auto-layout)";
+async function figmaSpec() {
   const snap = snapshot();
   const t = time % snap.scene.tl.total;
   await fontsReady(snap.p);
@@ -1520,7 +1520,7 @@ async function figmaSpec(bgType: "image/png" | "image/jpeg" = "image/png") {
     colors: { bg: snap.p.colors.labelBg, text: snap.p.colors.labelText },
     stack: lay.stackRect ? { anchor: snap.p.stackAnchor, top: lay.stackRect.y, bottom: lay.stackRect.y + lay.stackRect.h } : null,
     rows,
-    background: bg.toDataURL(bgType, 0.92),
+    background: bg.toDataURL("image/jpeg", 0.92),
   };
 }
 // Figma view: the same tree as HTML, in the preview. In the Figma code layer
@@ -1537,8 +1537,7 @@ const div = (cls: string) => {
   return d;
 };
 async function buildDomCard() {
-  // JPEG: Figma's capture inlines the image, and a PNG makes it far too big
-  const spec = await figmaSpec("image/jpeg");
+  const spec = await figmaSpec();
   if (!figmaView) return;
   domSize = { w: spec.w, h: spec.h };
   const card = div("fcard");
@@ -1633,6 +1632,61 @@ function setFigmaView(on: boolean) {
 figmaViewBtn.addEventListener("click", () => setFigmaView(!figmaView));
 new ResizeObserver(fitDomCard).observe(stageEl);
 
+type Spec = Awaited<ReturnType<typeof figmaSpec>>;
+const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const num = (n: number) => String(Math.round(n * 100) / 100);
+// The card as SVG: Figma pastes it straight onto the canvas as layers, the
+// background as an image, every block a rectangle, every word editable text
+// (Avantt has to be installed). The plugin's description rides along in
+// <metadata>, so the same clipboard gives the plugin its auto-layout build.
+function figmaSvg(spec: Spec): string {
+  const out: string[] = [];
+  out.push(
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${spec.w}" height="${spec.h}" viewBox="0 0 ${spec.w} ${spec.h}">`,
+  );
+  out.push(`<metadata id="artist-card">${xml(JSON.stringify({ ...spec, background: "" }))}</metadata>`);
+  out.push(`<image id="Background" x="0" y="0" width="${spec.w}" height="${spec.h}" preserveAspectRatio="none" xlink:href="${spec.background}"/>`);
+  const row = (r: SpecRow) => {
+    let x = r.cx + r.shift - r.w / 2;
+    const parts: string[] = [];
+    for (const b of r.blocks) {
+      parts.push(`<g id="${xml(b.text)}">`);
+      parts.push(`<rect x="${num(x)}" y="${num(r.top)}" width="${num(b.w)}" height="${num(b.h)}" fill="${spec.colors.bg}"/>`);
+      parts.push(
+        `<text x="${num(x + b.padX)}" y="${num(r.top + b.padTop + b.capH)}" font-family="${xml(spec.font.family)}" font-weight="${LABEL_WEIGHT}" font-size="${num(b.fs)}" letter-spacing="${num(b.tracking * b.fs)}" fill="${spec.colors.text}" xml:space="preserve">${xml(b.text)}</text>`,
+      );
+      parts.push("</g>");
+      x += b.w + spec.gap;
+    }
+    return `<g id="${xml(r.key)}">${parts.join("")}</g>`;
+  };
+  const stacked = spec.rows.filter((r) => r.stacked);
+  if (stacked.length) out.push(`<g id="Stack">${stacked.map(row).join("")}</g>`);
+  for (const r of spec.rows) if (!r.stacked) out.push(row(r));
+  out.push("</svg>");
+  return out.join("\n");
+}
+// clipboard refused (a sandboxed frame, say): hand the text over to copy by hand
+function offerText(text: string) {
+  const dlg = document.createElement("dialog");
+  dlg.className = "copy-dialog";
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.readOnly = true;
+  const p = document.createElement("p");
+  p.textContent = "The clipboard is not available here. Press Cmd+C to copy, then paste in Figma.";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "btn";
+  close.textContent = "Close";
+  close.addEventListener("click", () => dlg.close());
+  dlg.append(p, ta, close);
+  dlg.addEventListener("close", () => dlg.remove());
+  document.body.appendChild(dlg);
+  dlg.showModal();
+  ta.focus();
+  ta.select();
+}
 figmaBtn.addEventListener("click", async () => {
   figmaBtn.disabled = true;
   try {
@@ -1641,8 +1695,13 @@ figmaBtn.addEventListener("click", async () => {
       window.parent.postMessage({ type: "artist-card-figma", spec }, "*");
       flash(figmaBtn, "Sent");
     } else {
-      await navigator.clipboard.writeText(JSON.stringify(spec));
-      flash(figmaBtn, "Copied");
+      const svg = figmaSvg(spec);
+      try {
+        await navigator.clipboard.writeText(svg);
+        flash(figmaBtn, "Copied");
+      } catch {
+        offerText(svg);
+      }
     }
   } catch (err) {
     console.error("[figma]", err);
@@ -1737,7 +1796,8 @@ declare global {
   interface Window {
     artistCard: {
       params: Params;
-      figmaSpec: (bgType?: "image/png" | "image/jpeg") => Promise<unknown>;
+      figmaSpec: () => Promise<unknown>;
+      figmaSvg: () => Promise<string>;
       setTime: (t: number) => void;
       apply: (json: string) => boolean;
       loadImageUrl: (url: string) => Promise<void>;
@@ -1750,6 +1810,7 @@ declare global {
 window.artistCard = {
   params,
   figmaSpec,
+  figmaSvg: async () => figmaSvg(await figmaSpec()),
   setTime: (t: number) => {
     setTime(t);
     draw();

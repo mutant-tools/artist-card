@@ -118,8 +118,9 @@ Right column:
   The URL hash always carries every setting that differs from the defaults
   (photo excepted), so the link itself restores the state.
 - **Export MP4 / PNG**.
-- **Figma view** the frame shown in the preview as HTML layers (see Figma
-  below); **Copy for Figma** the same, for the Figma plugin.
+- **Figma view** the frame shown in the preview as HTML layers; **Copy for
+  Figma** the frame as SVG on the clipboard, to paste in Figma (see Figma
+  below).
 
 ## Figma
 
@@ -137,12 +138,20 @@ HTML), then use Figma's **Extract designs > Select element** and click the
 card. Figma converts the HTML into auto-layout frames at 1080 px. **Motion
 view** brings the animation back.
 
+**Copy for Figma (any browser):** copies the frame as SVG. Paste it on a
+Figma canvas (Cmd+V) and it lands as layers: the background image, a
+rectangle per block, every word an editable text layer in Avantt Bold,
+grouped per row and block. Static: the blocks do not grow with the text
+(Figma's SVG import also drops the tracking). Where the clipboard is
+blocked, a window shows the text to copy by hand.
+
 **Plugin:** `figma-plugin/` is a small Figma plugin that builds the same
 layers directly. Install once: Figma desktop, Plugins > Development >
 Import plugin from manifest, pick `figma-plugin/manifest.json`. Then either
 run the plugin (it opens the live tool in its window; set the card up and
 press **Send to Figma**), or press **Copy for Figma** in the tool anywhere
-and use the plugin's **Paste from clipboard**. Inter Bold stands in when
+and use the plugin's **Paste from clipboard** (the SVG carries the full
+description, so this gives the auto-layout build). Inter Bold stands in when
 Avantt is missing, with a note.
 
 ## Model
