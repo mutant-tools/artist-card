@@ -28,20 +28,9 @@
       say("Building…");
       parent.postMessage({ pluginMessage: { type: "build", spec } }, "*");
     };
-    const unxml = (s) => s.replace(/&quot;/g, '"').replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
     const fromText = (text) => {
       try {
         text = text.trim();
-        if (text.startsWith("<svg")) {
-          // the tool's SVG: the description sits in <metadata>, the image in <image>
-          const meta = /<metadata id="artist-card">([\s\S]*?)<\/metadata>/.exec(text);
-          const img = /xlink:href="(data:image\/[^"]+)"/.exec(text);
-          if (!meta || !img) throw new Error("not a card");
-          const spec = JSON.parse(unxml(meta[1]));
-          spec.background = img[1];
-          send(spec);
-          return;
-        }
         const spec = JSON.parse(text);
         if (!spec || spec.v !== 1 || !Array.isArray(spec.rows)) throw new Error("not a card");
         send(spec);
