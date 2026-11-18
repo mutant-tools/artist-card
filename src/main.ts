@@ -5,6 +5,7 @@ import {
   type Rect,
   COLORWAYS,
   LABEL_GAP,
+  LABEL_WEIGHT,
   colorwayIndex,
   DEFAULT_PARAMS,
   FORMATS,
@@ -59,12 +60,15 @@ let playing = false;
 // ---------- render scheduling ----------
 
 let raf = 0;
+let figmaView = false; // the preview shows the card as HTML layers (see Figma view)
+let domTimer = 0;
 function draw() {
   layout = render(ctx, params, scene, time % scene.tl.total, 1, image);
   drawFalloffHandle();
 }
 function schedule() {
   syncHash();
+  refreshDomCard();
   if (raf || playing) return;
   raf = requestAnimationFrame(() => {
     raf = 0;
@@ -1314,6 +1318,7 @@ previewEl.addEventListener(
     if (next === previewScale) return;
     previewScale = next;
     canvas.style.setProperty("--preview-scale", String(previewScale));
+    fitDomCard();
   },
   { passive: false },
 );
@@ -1489,7 +1494,7 @@ figmaBtn.textContent = IN_PLUGIN ? "Send to Figma" : "Copy for Figma";
 figmaBtn.title = IN_PLUGIN
   ? "Build the frame shown in the preview as editable Figma layers"
   : "Copy the frame shown in the preview for the Artist Card Figma plugin (paste it there)";
-async function figmaSpec() {
+async function figmaSpec(bgType: "image/png" | "image/jpeg" = "image/png") {
   const snap = snapshot();
   const t = time % snap.scene.tl.total;
   await fontsReady(snap.p);
@@ -1515,9 +1520,119 @@ async function figmaSpec() {
     colors: { bg: snap.p.colors.labelBg, text: snap.p.colors.labelText },
     stack: lay.stackRect ? { anchor: snap.p.stackAnchor, top: lay.stackRect.y, bottom: lay.stackRect.y + lay.stackRect.h } : null,
     rows,
-    background: bg.toDataURL("image/png"),
+    background: bg.toDataURL(bgType, 0.92),
   };
 }
+// Figma view: the same tree as HTML, in the preview. In the Figma code layer
+// "Extract designs > Select element" on the card then gives auto-layout
+// frames with editable text, no plugin needed. The view is a still of the
+// frame shown and follows every setting change.
+const figmaViewBtn = $<HTMLButtonElement>("figmaViewBtn");
+const domCard = $<HTMLDivElement>("domCard");
+let domSize = { w: 1080, h: 1350 };
+const px = (n: number) => `${Math.round(n * 100) / 100}px`;
+const div = (cls: string) => {
+  const d = document.createElement("div");
+  d.className = cls;
+  return d;
+};
+async function buildDomCard() {
+  // JPEG: Figma's capture inlines the image, and a PNG makes it far too big
+  const spec = await figmaSpec("image/jpeg");
+  if (!figmaView) return;
+  domSize = { w: spec.w, h: spec.h };
+  const card = div("fcard");
+  card.style.width = px(spec.w);
+  card.style.height = px(spec.h);
+  const img = document.createElement("img");
+  img.className = "fbg";
+  img.src = spec.background;
+  img.alt = "";
+  card.appendChild(img);
+  const area = (name: string, anchor: string, top: number, bottom: number) => {
+    const a = div("farea");
+    a.dataset.name = name;
+    a.style.justifyContent = anchor === "bottom" ? "flex-end" : "flex-start";
+    a.style.paddingTop = anchor === "bottom" ? "0" : px(Math.max(0, top));
+    a.style.paddingBottom = anchor === "bottom" ? px(Math.max(0, spec.h - bottom)) : "0";
+    card.appendChild(a);
+    return a;
+  };
+  const stack = () => {
+    const s = div("fstack");
+    s.style.gap = px(spec.gap);
+    return s;
+  };
+  const block = (b: SpecRow["blocks"][number]) => {
+    const d = div("fblock");
+    d.style.padding = `${px(b.padTop)} ${px(b.padX)} ${px(b.padBottom)}`;
+    d.style.background = spec.colors.bg;
+    const t = document.createElement("span");
+    t.className = "ftext";
+    t.textContent = b.text;
+    t.style.fontFamily = `"${spec.font.family}", system-ui, sans-serif`;
+    t.style.fontWeight = String(LABEL_WEIGHT);
+    t.style.fontSize = px(b.fs);
+    // a line box of cap height puts the baseline where the canvas has it
+    t.style.lineHeight = px(b.capH);
+    t.style.letterSpacing = `${b.tracking}em`;
+    t.style.color = spec.colors.text;
+    d.appendChild(t);
+    return d;
+  };
+  const row = (r: SpecRow) => {
+    const d = div("frow");
+    d.style.gap = px(spec.gap);
+    if (r.shift < 0) d.style.paddingRight = px(-2 * r.shift);
+    else if (r.shift > 0) d.style.paddingLeft = px(2 * r.shift);
+    for (const b of r.blocks) d.appendChild(block(b));
+    return d;
+  };
+  const stacked = spec.rows.filter((r) => r.stacked);
+  if (stacked.length && spec.stack) {
+    const s = stack();
+    for (const r of stacked) s.appendChild(row(r));
+    area("Stack", spec.stack.anchor, spec.stack.top, spec.stack.bottom).appendChild(s);
+  }
+  const free = spec.rows.filter((r) => !r.stacked);
+  let i = 0;
+  while (i < free.length) {
+    const key = free[i].key;
+    const group: SpecRow[] = [];
+    while (i < free.length && free[i].key === key) group.push(free[i++]);
+    const last = group[group.length - 1];
+    const s = stack();
+    for (const r of group) s.appendChild(row(r));
+    area(key, "top", group[0].top, last.top + last.h).appendChild(s);
+  }
+  domCard.replaceChildren(card);
+  fitDomCard();
+}
+function fitDomCard() {
+  const card = domCard.firstElementChild as HTMLElement | null;
+  if (!card) return;
+  const k = Math.min(stageEl.clientWidth / domSize.w, stageEl.clientHeight / domSize.h) * previewScale;
+  domCard.style.width = px(domSize.w * k);
+  domCard.style.height = px(domSize.h * k);
+  card.style.transform = `scale(${k})`;
+}
+function refreshDomCard() {
+  if (!figmaView) return;
+  window.clearTimeout(domTimer);
+  domTimer = window.setTimeout(() => void buildDomCard().catch((err) => console.error("[figma view]", err)), 150);
+}
+function setFigmaView(on: boolean) {
+  figmaView = on;
+  if (on && playing) setPlaying(false);
+  stageEl.classList.toggle("figma-view", on);
+  figmaViewBtn.classList.toggle("active", on);
+  figmaViewBtn.textContent = on ? "Motion view" : "Figma view";
+  if (on) refreshDomCard();
+  else domCard.replaceChildren();
+}
+figmaViewBtn.addEventListener("click", () => setFigmaView(!figmaView));
+new ResizeObserver(fitDomCard).observe(stageEl);
+
 figmaBtn.addEventListener("click", async () => {
   figmaBtn.disabled = true;
   try {
@@ -1622,7 +1737,7 @@ declare global {
   interface Window {
     artistCard: {
       params: Params;
-      figmaSpec: () => Promise<unknown>;
+      figmaSpec: (bgType?: "image/png" | "image/jpeg") => Promise<unknown>;
       setTime: (t: number) => void;
       apply: (json: string) => boolean;
       loadImageUrl: (url: string) => Promise<void>;

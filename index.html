@@ -133,6 +133,7 @@
                   <button type="button" class="btn" id="exportPngBtn" title="The frame shown in the preview, at 2x">Export PNG</button>
                 </div>
                 <div class="seg">
+                  <button type="button" class="btn" id="figmaViewBtn" title="Show the frame as HTML layers, for Figma's Extract designs (Select element on the card)">Figma view</button>
                   <button type="button" class="btn" id="figmaBtn">Copy for Figma</button>
                 </div>
               </section>
@@ -152,6 +153,7 @@
         </div>
         <div class="stage" id="stage">
           <canvas id="canvas" width="1080" height="1350"></canvas>
+          <div id="domCard"></div>
         </div>
         <div class="timeline" id="timeline">
           <button type="button" class="frame" id="frameBtn" title="Play / pause (Space). Arrow keys step a frame, Shift+arrow ten, Home restarts">0</button>

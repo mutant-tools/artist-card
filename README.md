@@ -118,43 +118,32 @@ Right column:
   The URL hash always carries every setting that differs from the defaults
   (photo excepted), so the link itself restores the state.
 - **Export MP4 / PNG**.
-- **Copy for Figma** the frame shown in the preview, for the Figma plugin
-  (below): the background as one image, every text block as editable layers.
+- **Figma view** the frame shown in the preview as HTML layers (see Figma
+  below); **Copy for Figma** the same, for the Figma plugin.
 
 ## Figma
 
-`figma-plugin/` is a small Figma plugin that rebuilds a card as native
-layers: the photo, strips, floaters and logo as one image, every text block
-an auto-layout frame (the tool's padding, fill, font size and tracking) with
-editable, cap-height-trimmed text, rows and the stack auto-layouted and
-anchored to the card's top or bottom edge, so edits re-flow and stay
-centred. Only the frame shown in the preview is taken (set the time first).
+Two ways to get a card into Figma as editable layers: the photo, strips,
+floaters and logo as one image, every text block an auto-layout frame with
+the tool's padding, fill, font size and tracking, rows and the stack
+auto-layouted and anchored to the card's top or bottom edge, so edits
+re-flow and stay centred. Only the frame shown in the preview is taken (set
+the time first). The text is set in Avantt Bold, which has to be installed
+on that machine.
 
-Install once: Figma desktop, Plugins > Development > Import plugin from
-manifest, pick `figma-plugin/manifest.json`. Then either
+**Without a plugin (code layer):** in the Touquet file's code layer, set
+the card up, press **Figma view** (the preview turns into the same card as
+HTML), then use Figma's **Extract designs > Select element** and click the
+card. Figma converts the HTML into auto-layout frames at 1080 px. **Motion
+view** brings the animation back.
 
-- run the plugin: it opens the live tool in its window; set the card up and
-  press **Send to Figma**; or
-- press **Copy for Figma** in the tool anywhere (the site, or the code layer
-  in the Touquet file), run the plugin and press **Paste from clipboard**.
-
-The text is set in Avantt Bold, which has to be installed on that machine
-(Inter Bold stands in otherwise, with a note).
-
-Preview:
-
-- Drag the artist block group up or down to place it (vertical only, saved
-  in the settings as `labelY`).
-- Drag the photo to reposition it; scroll over the card to zoom it about the
-  pointer; scroll outside the card to resize the preview.
-- The timeline under the card: click the frame number or press Space to
-  play / pause, drag the ticks to scrub, arrow keys step one frame (Shift:
-  ten), Home restarts.
-
-Hidden defaults (no UI, set via paste settings): `focus` (which half starts
-with 3-unit stripes, default bottom), `moveMin` / `moveMax` (1.8 / 3.6 s
-block keyframe spacing), `floatMoveMin` / `floatMoveMax` (1 / 2.5 s), the
-easing `cubic-bezier(0.70, 0.10, 0.10, 0.90)` measured on the reference.
+**Plugin:** `figma-plugin/` is a small Figma plugin that builds the same
+layers directly. Install once: Figma desktop, Plugins > Development >
+Import plugin from manifest, pick `figma-plugin/manifest.json`. Then either
+run the plugin (it opens the live tool in its window; set the card up and
+press **Send to Figma**), or press **Copy for Figma** in the tool anywhere
+and use the plugin's **Paste from clipboard**. Inter Bold stands in when
+Avantt is missing, with a note.
 
 ## Model
 
