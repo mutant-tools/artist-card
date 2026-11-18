@@ -104,7 +104,9 @@ Right column:
   none), **Floaters size** largest in units (smallest is half), **Floaters
   travel** largest sideways step in px on the 1080 canvas. They show their
   own stripes, grow, shrink to nothing and back, and drift; they trail the
-  opening a beat behind the hole edge and are gone once a row is fully open.
+  opening a beat behind the hole edge and are gone once a row is fully open
+  (in the side and full layouts the rows are held open, so they simply live
+  in them).
 - **Colours** the 67 Touquet colourways, locked sets of four (top A / B,
   bottom A / B): the arrows step through them, the box shows the current
   number (type one to jump; `–` means custom colours). Click a swatch for a
@@ -116,6 +118,28 @@ Right column:
   The URL hash always carries every setting that differs from the defaults
   (photo excepted), so the link itself restores the state.
 - **Export MP4 / PNG**.
+- **Copy for Figma** the frame shown in the preview, for the Figma plugin
+  (below): the background as one image, every text block as editable layers.
+
+## Figma
+
+`figma-plugin/` is a small Figma plugin that rebuilds a card as native
+layers: the photo, strips, floaters and logo as one image, every text block
+an auto-layout frame (the tool's padding, fill, font size and tracking) with
+editable, cap-height-trimmed text, rows and the stack auto-layouted and
+anchored to the card's top or bottom edge, so edits re-flow and stay
+centred. Only the frame shown in the preview is taken (set the time first).
+
+Install once: Figma desktop, Plugins > Development > Import plugin from
+manifest, pick `figma-plugin/manifest.json`. Then either
+
+- run the plugin: it opens the live tool in its window; set the card up and
+  press **Send to Figma**; or
+- press **Copy for Figma** in the tool anywhere (the site, or the code layer
+  in the Touquet file), run the plugin and press **Paste from clipboard**.
+
+The text is set in Avantt Bold, which has to be installed on that machine
+(Inter Bold stands in otherwise, with a note).
 
 Preview:
 

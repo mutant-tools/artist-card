@@ -899,6 +899,37 @@ export interface Layout {
   blocks: Partial<Record<StackKey, Rect>>; // one-stage: every block row (full size, for dragging)
 }
 
+// ---------- static description of the labels (for the Figma plugin) ----------
+export interface SpecBlock {
+  text: string;
+  w: number;
+  h: number;
+  fs: number;
+  padX: number;
+  padTop: number;
+  padBottom: number;
+  capH: number;
+  tracking: number; // em
+}
+export interface SpecRow {
+  key: string; // stack key, or "seam" / "artist" in the reveal
+  stacked: boolean; // part of the centred stack (one-stage layouts)
+  cx: number; // row centre before the shift
+  top: number;
+  w: number;
+  h: number;
+  shift: number; // px added to the centre (B2B row)
+  blocks: SpecBlock[];
+}
+export interface RenderOptions {
+  labels?: boolean; // false: everything but the text blocks
+  spec?: SpecRow[]; // collects every row drawn
+}
+let labelsOn = true;
+let specSink: SpecRow[] | null = null;
+let specKey = "";
+let specStacked = false;
+
 /** Cover-fit placement of the background image (shared with drag-to-pan). */
 export function coverRect(
   img: { width: number; height: number },
@@ -969,7 +1000,7 @@ const STYLE_TINY: LabelStyle = { fs: 18 / D, padTop: 18 / D, padBottom: 18 / D, 
 const STYLE_SENTENCE: LabelStyle = { fs: 12 / D, padTop: 12 / D, padBottom: 12 / D, padX: 3 / D, upper: false, tracking: 0 };
 // the info sentence in its bigger size (18 px, no capitals)
 const STYLE_SMALL_PLAIN: LabelStyle = { fs: 18 / D, padTop: 18 / D, padBottom: 18 / D, padX: 3 / D, upper: false, tracking: LABEL_TRACKING };
-const LABEL_GAP = 4.5 / D;
+export const LABEL_GAP = 4.5 / D;
 
 interface Block {
   text: string;
@@ -1111,6 +1142,28 @@ function drawRow(
   if (!row) return;
   const vis = row.blocks.map((b, i) => b.w * clamp01(reveal(i)));
   if (!vis.some((v) => v >= 0.5)) return;
+  if (specSink)
+    specSink.push({
+      key: specKey,
+      stacked: specStacked,
+      cx,
+      top,
+      w: row.w,
+      h: row.h,
+      shift: row.shift,
+      blocks: row.blocks.map((b) => ({
+        text: b.text,
+        w: b.w,
+        h: b.h,
+        fs: b.fs,
+        padX: b.padX,
+        padTop: b.padTop,
+        padBottom: b.h - b.padTop - b.capH,
+        capH: b.capH,
+        tracking: b.tracking,
+      })),
+    });
+  if (!labelsOn) return;
   const rowW = vis.reduce((a, v) => a + v, 0) + gap * (row.blocks.length - 1);
   const maxFs = row.blocks.reduce((a, b) => Math.max(a, b.fs), 0);
   ctx.save();
@@ -1195,7 +1248,19 @@ export function render(
   t: number,
   scale: number,
   image: ImageSource | null,
+  opts?: RenderOptions,
 ): Layout {
+  labelsOn = opts?.labels !== false;
+  specSink = opts?.spec ?? null;
+  try {
+    return renderInner(ctx, p, scene, t, scale, image);
+  } finally {
+    labelsOn = true;
+    specSink = null;
+  }
+}
+
+function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: number, scale: number, image: ImageSource | null): Layout {
   const W = scene.W * scale;
   const H = scene.H * scale;
   const S = scene.S * scale;
@@ -1241,7 +1306,7 @@ export function render(
       ctx.clip();
       for (const f of r.floaters) {
         const fw = evalChain(scene, f.widthKeys, t) * scale * trail;
-        if (fw < 1) continue;
+        if (fw < 4) continue; // shrunk away: no hairlines
         const fx = cx + (f.x0 * lag + evalChain(scene, f.shiftKeys, t)) * scale;
         const sm = evalChain(scene, f.stripeKeys, t);
         const sw = Math.max(1, unit * sm);
@@ -1279,6 +1344,8 @@ export function render(
     let seamFirst = 0;
     for (const r of seamRows) {
       const base = seamFirst;
+      specKey = "seam";
+      specStacked = false;
       drawRow(ctx, r, cx, y, gap, (i) => 1 - blockProgress(scene, scene.seam, base + i, seamN, t), dirOf(base), slide, p.colors, fam);
       seamFirst += r.blocks.length;
       y += r.h + gap;
@@ -1299,6 +1366,8 @@ export function render(
       let anyOpen = 0;
       for (const r of groupRows) {
         const base = first;
+        specKey = "artist";
+        specStacked = false;
         drawRow(
           ctx,
           r,
@@ -1359,6 +1428,8 @@ export function render(
   const drawItem = (key: StackKey, top: number, centreX: number) => {
     const rows = items.get(key)!;
     let yy = top;
+    specKey = key;
+    specStacked = p.free[key] === undefined;
     for (const r of rows) {
       const base = g;
       drawRow(ctx, r, centreX, yy, gap, (i) => blockProgress(scene, scene.artist, base + i, nBlocks, t), dirOf(50 + base), slide, p.colors, fam);

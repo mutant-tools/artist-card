@@ -27,7 +27,7 @@ export function fileStem(p: Params, scale: number): string {
   return `${name}-${p.format.replace(":", "x")}@${scale}x`;
 }
 
-async function fontsReady(p: Params) {
+export async function fontsReady(p: Params) {
   try {
     await document.fonts.load(`700 100px "${p.fontFamily}"`);
     await document.fonts.ready;

@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  html, body { margin: 0; height: 100%; background: #f4f4f4; font: 12px/1.3 system-ui, -apple-system, sans-serif; color: #737373; }
+  body { display: flex; flex-direction: column; }
+  .bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: #fff; border-bottom: 1px solid #e4e4e4; flex: 0 0 auto; }
+  .bar button { font: inherit; padding: 6px 10px; border: 0; border-radius: 0; background: #f4f4f4; color: #737373; cursor: pointer; }
+  .bar button:hover { background: #ececec; }
+  .bar .status { margin-left: auto; }
+  iframe { flex: 1 1 auto; width: 100%; border: 0; }
+  textarea { position: absolute; left: -9999px; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <span>Set the card up below and press <b>Send to Figma</b>, or</span>
+    <button id="paste" type="button">Paste from clipboard</button>
+    <span class="status" id="status"></span>
+  </div>
+  <iframe id="tool" src="https://typograaf.github.io/artist-card/?plugin=1" allow="clipboard-read; clipboard-write"></iframe>
+  <textarea id="fallback" aria-hidden="true"></textarea>
+  <script>
+    const status = document.getElementById("status");
+    const say = (s) => { status.textContent = s; };
+    const send = (spec) => {
+      say("Building…");
+      parent.postMessage({ pluginMessage: { type: "build", spec } }, "*");
+    };
+    const fromText = (text) => {
+      try {
+        const spec = JSON.parse(text);
+        if (!spec || spec.v !== 1 || !Array.isArray(spec.rows)) throw new Error("not a card");
+        send(spec);
+      } catch {
+        say("That is not a Copy for Figma description.");
+      }
+    };
+    window.addEventListener("message", (e) => {
+      const d = e.data;
+      if (!d) return;
+      if (d.type === "artist-card-figma" && d.spec) send(d.spec); // from the tool
+      else if (d.pluginMessage && d.pluginMessage.type === "status") say(d.pluginMessage.text); // from the plugin
+    });
+    document.getElementById("paste").addEventListener("click", async () => {
+      try {
+        fromText(await navigator.clipboard.readText());
+      } catch {
+        // no clipboard access here: catch the paste in a hidden field
+        const ta = document.getElementById("fallback");
+        ta.value = "";
+        ta.focus();
+        say("Press Cmd+V to paste.");
+        ta.onpaste = (ev) => {
+          ev.preventDefault();
+          fromText(ev.clipboardData.getData("text"));
+        };
+      }
+    });
+  </script>
+</body>
+</html>

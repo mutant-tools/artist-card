@@ -4,6 +4,7 @@ import type { HexColorPicker } from "vanilla-colorful/hex-color-picker.js";
 import {
   type Rect,
   COLORWAYS,
+  LABEL_GAP,
   colorwayIndex,
   DEFAULT_PARAMS,
   FORMATS,
@@ -20,10 +21,11 @@ import {
   type LogoPos,
   type Params,
   type Scene,
+  type SpecRow,
   type StackKey,
   type StaggerOrder,
 } from "./engine";
-import { exportMp4, exportPng, supportsVideoExport } from "./export";
+import { exportMp4, exportPng, fontsReady, supportsVideoExport } from "./export";
 import { loadLogo } from "./logo";
 import { audioPackets, loadAudioFile, playAudio, stopAudio, windowPeaks, type AudioTrack } from "./audio";
 
@@ -332,6 +334,7 @@ const setFormatUI = bindSeg<Format>("formatSeg", "format", (v) => {
 // default photo. Applying a preset resets everything but the format.
 const EDGE = 51.5 / 675; // the examples' margin, as a fraction of the height
 const INFO_H = (12 + 12 * 0.694 + 12) / 675; // the sentence block's height
+const PRESET_NAMES: Record<number, string> = { 1: "Reveal", 2: "Infos Pratiques", 3: "Full blocks", 4: "App TMB26" };
 const PRESETS: Record<number, Partial<Params>> = {
   1: {},
   2: {
@@ -1473,6 +1476,67 @@ pasteBtn.addEventListener("click", async () => {
   flash(pasteBtn, applySettings(text) ? "Applied" : "Invalid", 1200);
 });
 
+// ---------- Figma ----------
+// The card as native Figma layers: the background (photo, strips, floaters,
+// logo) is one image, every text block an auto-layout frame with editable
+// text, rows and the stack auto-layouted so edits re-flow and stay centred.
+// Inside the plugin (figma-plugin/) the tool runs in an iframe and sends the
+// description straight to it; anywhere else the button copies it, and the
+// plugin can paste it.
+const IN_PLUGIN = window.parent !== window && new URLSearchParams(location.search).has("plugin");
+const figmaBtn = $<HTMLButtonElement>("figmaBtn");
+figmaBtn.textContent = IN_PLUGIN ? "Send to Figma" : "Copy for Figma";
+figmaBtn.title = IN_PLUGIN
+  ? "Build the frame shown in the preview as editable Figma layers"
+  : "Copy the frame shown in the preview for the Artist Card Figma plugin (paste it there)";
+async function figmaSpec() {
+  const snap = snapshot();
+  const t = time % snap.scene.tl.total;
+  await fontsReady(snap.p);
+  const BG_SCALE = 2;
+  const bg = document.createElement("canvas");
+  bg.width = snap.scene.W * BG_SCALE;
+  bg.height = snap.scene.H * BG_SCALE;
+  const bctx = bg.getContext("2d")!;
+  render(bctx, snap.p, snap.scene, t, BG_SCALE, snap.image, { labels: false });
+  const probe = document.createElement("canvas");
+  probe.width = snap.scene.W;
+  probe.height = snap.scene.H;
+  const rows: SpecRow[] = [];
+  const lay = render(probe.getContext("2d")!, snap.p, snap.scene, t, 1, snap.image, { spec: rows });
+  const name = PRESET_NAMES[snap.p.preset] ?? "Artist card";
+  return {
+    v: 1,
+    name: `${name} ${snap.p.format}`,
+    w: snap.scene.W,
+    h: snap.scene.H,
+    gap: LABEL_GAP * snap.scene.S,
+    font: { family: snap.p.fontFamily || "Avantt", style: "Bold" },
+    colors: { bg: snap.p.colors.labelBg, text: snap.p.colors.labelText },
+    stack: lay.stackRect ? { anchor: snap.p.stackAnchor, top: lay.stackRect.y, bottom: lay.stackRect.y + lay.stackRect.h } : null,
+    rows,
+    background: bg.toDataURL("image/png"),
+  };
+}
+figmaBtn.addEventListener("click", async () => {
+  figmaBtn.disabled = true;
+  try {
+    const spec = await figmaSpec();
+    if (IN_PLUGIN) {
+      window.parent.postMessage({ type: "artist-card-figma", spec }, "*");
+      flash(figmaBtn, "Sent");
+    } else {
+      await navigator.clipboard.writeText(JSON.stringify(spec));
+      flash(figmaBtn, "Copied");
+    }
+  } catch (err) {
+    console.error("[figma]", err);
+    alert("Could not prepare the Figma layers; check the console.");
+  } finally {
+    figmaBtn.disabled = false;
+  }
+});
+
 function syncUI() {
   setFormatUI(params.format);
   setOrderUI(params.staggerOrder);
@@ -1558,6 +1622,7 @@ declare global {
   interface Window {
     artistCard: {
       params: Params;
+      figmaSpec: () => Promise<unknown>;
       setTime: (t: number) => void;
       apply: (json: string) => boolean;
       loadImageUrl: (url: string) => Promise<void>;
@@ -1569,6 +1634,7 @@ declare global {
 }
 window.artistCard = {
   params,
+  figmaSpec,
   setTime: (t: number) => {
     setTime(t);
     draw();
