@@ -1230,9 +1230,11 @@ export function render(
     // Floaters trail the opening: they travel outward a beat behind the
     // hole edge and shrink away as the row reaches fully open (back again
     // the same way when it closes).
-    const trail = Math.sqrt(Math.max(0, 1 - pr));
+    // in the held-open layouts (side, full) they simply live in the open rows
+    const held = scene.layout === "side" || scene.layout === "full";
+    const trail = held ? 1 : Math.sqrt(Math.max(0, 1 - pr));
     if (r.floaters.length && right - left > 1 && trail > 0.02) {
-      const lag = rowProgress(scene, p, r, t - 0.15);
+      const lag = held ? 1 : rowProgress(scene, p, r, t - 0.15);
       ctx.save();
       ctx.beginPath();
       ctx.rect(left, y0, right - left, h);

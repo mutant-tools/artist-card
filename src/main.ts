@@ -2,6 +2,7 @@ import "./style.css";
 import "vanilla-colorful/hex-color-picker.js";
 import type { HexColorPicker } from "vanilla-colorful/hex-color-picker.js";
 import {
+  type Rect,
   COLORWAYS,
   colorwayIndex,
   DEFAULT_PARAMS,
@@ -371,7 +372,6 @@ const PRESETS: Record<number, Partial<Params>> = {
     vignette: 100,
     faith: 100,
     irregularity: 0,
-    floatCount: 0,
     falloffX: 0.5,
     falloffY: 0.5,
     falloffR: 0.36,
@@ -574,8 +574,8 @@ const HIDDEN_STEPS: Record<LayoutKind, NumKey[]> = {
   reveal: ["stripPx", "loopLen"],
   none: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "rowsTop", "rowsBottom", "stripPx", "irregularity", "shapeSeed", "unitPx", "blockWidth", "blockTravel", "blockSeed", "floatCount", "floatSize", "floatTravel"],
   row: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "irregularity", "shapeSeed", "blockWidth", "floatCount", "floatSize", "floatTravel"],
-  side: [...ONE_STAGE_OFF, "stripPx", "floatCount", "floatSize", "floatTravel"],
-  full: [...ONE_STAGE_OFF, "stripPx", "floatCount", "floatSize", "floatTravel"],
+  side: [...ONE_STAGE_OFF, "stripPx"],
+  full: [...ONE_STAGE_OFF, "stripPx"],
 };
 // Text fields per preset: the artist cards (1, 3) take day, time, artist and
 // stage; the info posters (2, 4) a title and the sentence.
@@ -956,23 +956,38 @@ function overStack(x: number, y: number): boolean {
   const r = layout.stackRect;
   return !!r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
+/** Union of the rects of the stacked blocks other than `key` (null when none). */
+function othersRect(key: StackKey): Rect | null {
+  let r: Rect | null = null;
+  for (const o of stackedKeys()) {
+    if (o === key) continue;
+    const b = layout.blocks[o]!;
+    r = r ? { x: Math.min(r.x, b.x), y: Math.min(r.y, b.y), w: 0, h: Math.max(r.y + r.h, b.y + b.h) - Math.min(r.y, b.y) } : { ...b };
+  }
+  return r;
+}
+/** Vertical distance between a block spanning y0..y1 and a rect (0 when they overlap). */
+function gapTo(y0: number, y1: number, r: Rect): number {
+  return Math.max(0, r.y - y1, y0 - (r.y + r.h));
+}
 function dragBlock(py: number, k: number) {
   const key = dragKey!;
   const H = canvas.height;
   const cyB = py - grabDY;
-  const sr = layout.stackRect;
-  const others = stackedKeys().filter((k) => k !== key);
-  if (!others.length) {
+  const me = layout.blocks[key]!;
+  const y0 = cyB - me.h / 2;
+  const y1 = cyB + me.h / 2;
+  const sr = othersRect(key);
+  if (!sr) {
     // nothing else in the stack: this block is the stack, so dragging it
     // moves the stack itself (keeps it a stack for others to snap into)
     delete params.free[key];
-    const r = layout.blocks[key]!;
-    params.stackY = clamp((params.stackAnchor === "top" ? cyB - r.h / 2 : cyB + r.h / 2) / H, 0, 1);
+    params.stackY = clamp((params.stackAnchor === "top" ? y0 : y1) / H, 0, 1);
     // a free block it is brought up against joins it, staying where it is
     for (const o of STACK_KEYS) {
       const ro = layout.blocks[o];
       if (o === key || params.free[o] === undefined || !ro) continue;
-      if (cyB > ro.y - (DETACH / 2) * k && cyB < ro.y + ro.h + (DETACH / 2) * k) {
+      if (gapTo(y0, y1, ro) < (DETACH / 2) * k) {
         delete params.free[o];
         const above = cyB < ro.y + ro.h / 2;
         params.stackAnchor = above ? "bottom" : "top";
@@ -983,15 +998,14 @@ function dragBlock(py: number, k: number) {
     }
   } else if (params.free[key] !== undefined) {
     params.free[key] = clamp(cyB / H, 0, 1);
-    // back near the stack: snap in at the row under the pointer
-    const near = !!sr && cyB > sr.y - (DETACH / 2) * k && cyB < sr.y + sr.h + (DETACH / 2) * k;
-    if (near) {
+    // back against the stack: snap in at the row under the pointer
+    if (gapTo(y0, y1, sr) < (DETACH / 2) * k) {
       delete params.free[key];
       reorderTo(key, cyB);
     }
   } else {
-    const away = sr && (cyB < sr.y - DETACH * k || cyB > sr.y + sr.h + DETACH * k);
-    if (away) params.free[key] = clamp(cyB / H, 0, 1);
+    // pulled clear of the other blocks: detach and sit at its own height
+    if (gapTo(y0, y1, sr) > DETACH * k) params.free[key] = clamp(cyB / H, 0, 1);
     else reorderTo(key, cyB);
   }
   schedule();
