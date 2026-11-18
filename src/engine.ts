@@ -921,14 +921,31 @@ export interface SpecRow {
   shift: number; // px added to the centre (B2B row)
   blocks: SpecBlock[];
 }
+export interface SpecShape {
+  row: number; // strip row index
+  floater: boolean;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  fill: string;
+}
 export interface RenderOptions {
   labels?: boolean; // false: everything but the text blocks
+  strips?: boolean; // false: no stripe rows or floaters (the photo alone)
+  logo?: boolean; // false: no logo
   spec?: SpecRow[]; // collects every row drawn
+  shapes?: SpecShape[]; // collects every stripe rectangle drawn
 }
 let labelsOn = true;
+let stripsOn = true;
+let logoOn = true;
 let specSink: SpecRow[] | null = null;
+let shapeSink: SpecShape[] | null = null;
 let specKey = "";
 let specStacked = false;
+let shapeRow = 0;
+let shapeFloater = false;
 
 /** Cover-fit placement of the background image (shared with drag-to-pan). */
 export function coverRect(
@@ -960,9 +977,13 @@ function drawStripes(
   colorB: string,
 ) {
   if (to <= from) return;
-  ctx.fillStyle = colorA;
-  ctx.fillRect(from, y0, to - from, h);
-  ctx.fillStyle = colorB;
+  const rect = (x: number, wd: number, fill: string) => {
+    if (shapeSink) shapeSink.push({ row: shapeRow, floater: shapeFloater, x, y: y0, w: wd, h, fill });
+    if (!stripsOn) return;
+    ctx.fillStyle = fill;
+    ctx.fillRect(x, y0, wd, h);
+  };
+  rect(from, to - from, colorA);
   const kmin = Math.floor((from - edge) / w + phase) - 1;
   const kmax = Math.floor((to - edge) / w + phase) + 1;
   for (let k = kmin; k <= kmax; k++) {
@@ -971,7 +992,7 @@ function drawStripes(
     // whole pixels: no anti-aliased hairlines between the two colours
     const a = Math.round(Math.max(from, x0));
     const b = Math.round(Math.min(to, x0 + w));
-    if (b > a) ctx.fillRect(a, y0, b - a, h);
+    if (b > a) rect(a, b - a, colorB);
   }
 }
 
@@ -1211,6 +1232,7 @@ function b2bRow(ctx: CanvasRenderingContext2D, p: Params, S: number, gap: number
 // ---------- logo ----------
 
 export interface LogoImages {
+  svg: string; // the source, drawn black
   black: CanvasImageSource;
   white: CanvasImageSource;
   w: number; // natural size
@@ -1222,6 +1244,9 @@ let logoImages: LogoImages | null = null;
 /** The logo artwork is loaded by the app (it is not part of the engine). */
 export function setLogoImages(images: LogoImages | null) {
   logoImages = images;
+}
+export function getLogoImages(): LogoImages | null {
+  return logoImages;
 }
 /** Where the logo sits at the render scale: the short side wide, centred, with equal margins top or bottom. */
 export function logoRect(p: Params, scene: Scene, scale: number): Rect | null {
@@ -1251,12 +1276,18 @@ export function render(
   opts?: RenderOptions,
 ): Layout {
   labelsOn = opts?.labels !== false;
+  stripsOn = opts?.strips !== false;
+  logoOn = opts?.logo !== false;
   specSink = opts?.spec ?? null;
+  shapeSink = opts?.shapes ?? null;
   try {
     return renderInner(ctx, p, scene, t, scale, image);
   } finally {
     labelsOn = true;
+    stripsOn = true;
+    logoOn = true;
     specSink = null;
+    shapeSink = null;
   }
 }
 
@@ -1290,6 +1321,8 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
     const left = Math.round(cx - holeL);
     const right = Math.round(cx + holeR);
     // each half carries its pattern along with its hole edge
+    shapeRow = r.index;
+    shapeFloater = false;
     drawStripes(ctx, origin - holeL, 0, left, y0, h, w, r.phase, cA, cB);
     drawStripes(ctx, origin + holeR, right, W, y0, h, w, r.phase, cA, cB);
     // Floaters trail the opening: they travel outward a beat behind the
@@ -1313,14 +1346,16 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
         const so = fx + evalChain(scene, f.stripeShift, t) * scale;
         const a = Math.max(left, fx - fw / 2);
         const b = Math.min(right, fx + fw / 2);
+        shapeFloater = true;
         drawStripes(ctx, so, a, b, y0, h, sw, f.phase, cA, cB);
+        shapeFloater = false;
       }
       ctx.restore();
     }
   }
 
   const lr = logoRect(p, scene, scale);
-  if (lr && logoImages) ctx.drawImage(p.logoColor === "white" ? logoImages.white : logoImages.black, lr.x, lr.y, lr.w, lr.h);
+  if (lr && logoImages && logoOn) ctx.drawImage(p.logoColor === "white" ? logoImages.white : logoImages.black, lr.x, lr.y, lr.w, lr.h);
 
   const fam = p.fontFamily || "Avantt";
   const gap = LABEL_GAP * S;

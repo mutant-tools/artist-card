@@ -1,14 +1,15 @@
-// Artist Card plugin: rebuilds a card from the tool's "Copy for Figma" /
-// "Send to Figma" description as native, editable layers.
+// Artist Card plugin: rebuilds a card from the tool's "Send to Figma" /
+// "Copy for Figma" description as native, editable layers.
 //
-// Frame (card)
-//   Background           image of everything but the text
-//   Stack area           card-sized auto-layout, anchors the stack top or bottom
-//     Stack              vertical auto-layout, centred
-//       Row              horizontal auto-layout
-//         Block          auto-layout with the padding, filled
-//           Text         editable, cap-height trimmed
-//   <key> area           one per free block row (same build as the stack)
+// Card (auto-layout: its one flowing child is the text stack, pinned to the
+//       top or bottom edge and centred, so edits re-flow)
+//   Photo            image fill, absolute
+//   Strips           absolute; one group of rectangles per row, plus Floaters
+//   Logo             vectors, absolute
+//   Text             vertical auto-layout, centred
+//     <row>          horizontal auto-layout
+//       <word>       auto-layout with the padding, filled; editable text
+//   <free rows>      card-wide hug-height wrapper, absolute at its height
 
 figma.showUI(__html__, { width: 1440, height: 900, themeColors: true });
 
@@ -63,44 +64,83 @@ async function build(spec) {
   const gap = spec.gap;
   const bgFill = hex(spec.colors.bg);
   const textFill = hex(spec.colors.text);
+  const stack = spec.stack;
+  const anchor = stack ? stack.anchor : "top";
 
+  // the card: an auto-layout frame whose flowing child is the text stack
   const card = figma.createFrame();
   card.name = spec.name || "Artist card";
+  card.layoutMode = "VERTICAL";
   card.resize(W, H);
+  card.primaryAxisSizingMode = "FIXED";
+  card.counterAxisSizingMode = "FIXED";
+  card.counterAxisAlignItems = "CENTER";
+  card.primaryAxisAlignItems = anchor === "bottom" ? "MAX" : "MIN";
+  card.paddingTop = stack && anchor === "top" ? Math.max(0, stack.top) : 0;
+  card.paddingBottom = stack && anchor === "bottom" ? Math.max(0, H - stack.bottom) : 0;
   card.clipsContent = true;
   card.fills = [];
-  // drop it next to the current view
   const c = figma.viewport.center;
   card.x = Math.round(c.x - W / 2);
   card.y = Math.round(c.y - H / 2);
 
-  const image = figma.createImage(base64Bytes(spec.background));
-  const bg = figma.createRectangle();
-  bg.name = "Background";
-  bg.resize(W, H);
-  bg.fills = [{ type: "IMAGE", scaleMode: "FILL", imageHash: image.hash }];
-  bg.constraints = { horizontal: "SCALE", vertical: "SCALE" };
-  card.appendChild(bg);
-
-  // a card-sized auto-layout frame that pins its single child to the top
-  // or bottom edge, centred: edits grow the child the right way
-  const area = (name, anchor, top, bottom) => {
-    const f = figma.createFrame();
-    f.name = name;
-    f.resize(W, H);
-    f.fills = [];
-    f.clipsContent = false;
-    f.layoutMode = "VERTICAL";
-    f.primaryAxisSizingMode = "FIXED";
-    f.counterAxisSizingMode = "FIXED";
-    f.counterAxisAlignItems = "CENTER";
-    f.primaryAxisAlignItems = anchor === "bottom" ? "MAX" : "MIN";
-    f.paddingTop = anchor === "bottom" ? 0 : Math.max(0, top);
-    f.paddingBottom = anchor === "bottom" ? Math.max(0, H - bottom) : 0;
-    f.constraints = { horizontal: "SCALE", vertical: "SCALE" };
-    card.appendChild(f);
-    return f;
+  // a child that sits where it is, outside the flow
+  const pin = (node, x, y) => {
+    card.appendChild(node);
+    node.layoutPositioning = "ABSOLUTE";
+    node.x = x;
+    node.y = y;
+    node.constraints = { horizontal: "SCALE", vertical: "SCALE" };
   };
+
+  // photo
+  const image = figma.createImage(base64Bytes(spec.background));
+  const photo = figma.createRectangle();
+  photo.name = "Photo";
+  photo.resize(W, H);
+  photo.fills = [{ type: "IMAGE", scaleMode: "FILL", imageHash: image.hash }];
+  pin(photo, 0, 0);
+
+  // strips: one group per row, floaters together
+  const shapes = spec.shapes || [];
+  if (shapes.length) {
+    const strips = figma.createFrame();
+    strips.name = "Strips";
+    strips.resize(W, H);
+    strips.fills = [];
+    strips.clipsContent = false;
+    const byRow = new Map();
+    const floaters = [];
+    for (const sh of shapes) {
+      const r = figma.createRectangle();
+      r.name = sh.floater ? "Floater" : "Stripe";
+      r.x = sh.x;
+      r.y = sh.y;
+      r.resize(Math.max(0.01, sh.w), Math.max(0.01, sh.h));
+      r.fills = [{ type: "SOLID", color: hex(sh.fill) }];
+      strips.appendChild(r);
+      if (sh.floater) floaters.push(r);
+      else {
+        if (!byRow.has(sh.row)) byRow.set(sh.row, []);
+        byRow.get(sh.row).push(r);
+      }
+    }
+    for (const [row, rects] of [...byRow.entries()].sort((a, b) => a[0] - b[0])) {
+      const g = figma.group(rects, strips);
+      g.name = "Row " + (row + 1);
+    }
+    if (floaters.length) figma.group(floaters, strips).name = "Floaters";
+    pin(strips, 0, 0);
+  }
+
+  // logo: the SVG as vectors
+  if (spec.logo && spec.logo.svg) {
+    const src = spec.logo.color === "white" ? spec.logo.svg.replace(/fill="black"/g, 'fill="white"') : spec.logo.svg;
+    const logo = figma.createNodeFromSvg(src);
+    logo.name = "Logo";
+    logo.resize(spec.logo.w, spec.logo.h);
+    pin(logo, spec.logo.x, spec.logo.y);
+  }
 
   const stackFrame = (name) => {
     const f = figma.createFrame();
@@ -163,25 +203,32 @@ async function build(spec) {
 
   const rows = spec.rows || [];
   const stacked = rows.filter((r) => r.stacked);
-  if (stacked.length && spec.stack) {
-    const a = area("Stack area", spec.stack.anchor, spec.stack.top, spec.stack.bottom);
-    const s = stackFrame("Stack");
+  if (stacked.length && stack) {
+    const s = stackFrame("Text");
     for (const r of stacked) s.appendChild(row(r));
-    a.appendChild(s);
+    card.appendChild(s); // the flowing child: pinned to the edge, centred
   }
-  // free rows: consecutive rows of one key form their own little stack
+  // free rows: consecutive rows of one key form their own little stack, in
+  // a card-wide wrapper as high as themselves so they stay centred on edit
   let i = 0;
   const free = rows.filter((r) => !r.stacked);
   while (i < free.length) {
     const key = free[i].key;
     const group = [];
     while (i < free.length && free[i].key === key) group.push(free[i++]);
-    const top = group[0].top;
-    const bottom = group[group.length - 1].top + group[group.length - 1].h;
-    const a = area(key + " area", "top", top, bottom);
+    const wrap = figma.createFrame();
+    wrap.name = key;
+    wrap.fills = [];
+    wrap.clipsContent = false;
+    wrap.layoutMode = "HORIZONTAL";
+    wrap.resize(W, group[0].h);
+    wrap.primaryAxisSizingMode = "FIXED";
+    wrap.counterAxisSizingMode = "AUTO";
+    wrap.primaryAxisAlignItems = "CENTER";
     const s = stackFrame(key);
     for (const r of group) s.appendChild(row(r));
-    a.appendChild(s);
+    wrap.appendChild(s);
+    pin(wrap, 0, group[0].top);
   }
   return card;
 }

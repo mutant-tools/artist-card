@@ -49,7 +49,7 @@ export async function loadLogo(url: string): Promise<LogoImages | null> {
     const nw = b.naturalWidth || 1080;
     const nh = b.naturalHeight || 329;
     const ink = inkBounds(b, 540, Math.round((540 * nh) / nw));
-    const images: LogoImages = { black: b, white: w, w: nw, h: nh, inkTop: ink.top, inkBottom: ink.bottom };
+    const images: LogoImages = { svg: sized, black: b, white: w, w: nw, h: nh, inkTop: ink.top, inkBottom: ink.bottom };
     setLogoImages(images);
     return images;
   } catch (e) {

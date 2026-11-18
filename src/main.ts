@@ -6,6 +6,8 @@ import {
   COLORWAYS,
   LABEL_GAP,
   LABEL_WEIGHT,
+  getLogoImages,
+  logoRect,
   colorwayIndex,
   DEFAULT_PARAMS,
   FORMATS,
@@ -23,6 +25,7 @@ import {
   type Params,
   type Scene,
   type SpecRow,
+  type SpecShape,
   type StackKey,
   type StaggerOrder,
 } from "./engine";
@@ -1499,12 +1502,17 @@ async function figmaSpec() {
   bg.width = snap.scene.W * BG_SCALE;
   bg.height = snap.scene.H * BG_SCALE;
   const bctx = bg.getContext("2d")!;
-  render(bctx, snap.p, snap.scene, t, BG_SCALE, snap.image, { labels: false });
+  // the photo alone: strips, floaters, logo and text come as live layers
+  render(bctx, snap.p, snap.scene, t, BG_SCALE, snap.image, { labels: false, strips: false, logo: false });
   const probe = document.createElement("canvas");
   probe.width = snap.scene.W;
   probe.height = snap.scene.H;
   const rows: SpecRow[] = [];
-  const lay = render(probe.getContext("2d")!, snap.p, snap.scene, t, 1, snap.image, { spec: rows });
+  const shapes: SpecShape[] = [];
+  const lay = render(probe.getContext("2d")!, snap.p, snap.scene, t, 1, snap.image, { spec: rows, shapes });
+  const lr = logoRect(snap.p, snap.scene, 1);
+  const logoImages = getLogoImages();
+  const logo = lr && logoImages ? { svg: logoImages.svg, color: snap.p.logoColor, x: lr.x, y: lr.y, w: lr.w, h: lr.h } : null;
   const name = PRESET_NAMES[snap.p.preset] ?? "Artist card";
   return {
     v: 1,
@@ -1516,6 +1524,8 @@ async function figmaSpec() {
     colors: { bg: snap.p.colors.labelBg, text: snap.p.colors.labelText },
     stack: lay.stackRect ? { anchor: snap.p.stackAnchor, top: lay.stackRect.y, bottom: lay.stackRect.y + lay.stackRect.h } : null,
     rows,
+    shapes,
+    logo,
     background: bg.toDataURL("image/jpeg", 0.92),
   };
 }

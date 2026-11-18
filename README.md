@@ -124,11 +124,13 @@ Right column:
 ## Figma
 
 `figma-plugin/` is a small Figma plugin that builds a card as native,
-editable layers: the photo, strips, floaters and logo as one image, every
-text block an auto-layout frame with the tool's padding, fill, font size
-and tracking and editable cap-height-trimmed text, rows and the stack
-auto-layouted and anchored to the card's top or bottom edge, so edits
-re-flow and stay centred. Only the frame shown in the preview is taken (set
+editable layers: the photo as an image, every stripe and floater a
+rectangle (grouped per row), the logo as vectors, every text block an
+auto-layout frame with the tool's padding, fill, font size and tracking
+and editable cap-height-trimmed text. The card itself is the auto-layout:
+the text stack is its one flowing child, pinned to the top or bottom edge
+and centred, so edits re-flow and stay centred; everything else is
+absolute. Only the frame shown in the preview is taken (set
 the time first). The text is set in Avantt Bold, which has to be installed
 on that machine (Inter Bold stands in otherwise, with a note).
 
