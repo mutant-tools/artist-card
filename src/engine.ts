@@ -1295,6 +1295,7 @@ export interface LogoImages {
   inkRight: number; // fraction of w at the last ink
 }
 const LOGO_INK_WIDTH = 0.905; // the wordmark's ink spans this much of the short side (the original logo.svg at full width)
+const LOGO_MARGIN = 51.5 / 1080; // the ink's distance from the top or bottom edge, as a fraction of the short side (the original logo.svg)
 let logoSet: Partial<Record<LogoStyle, LogoImages>> = {};
 let logoImages: LogoImages | null = null; // the style in use, set by render / logoRect
 /** The logo artwork is loaded by the app (it is not part of the engine). */
@@ -1319,8 +1320,8 @@ export function logoRect(p: Params, scene: Scene, scale: number): Rect | null {
   const w = (S * LOGO_INK_WIDTH) / inkW;
   const h = (w * logoImages.h) / logoImages.w;
   const x = (W - w) / 2;
-  // the same margin top or bottom as the original: the ink's own top margin mirrors below
-  const margin = (logoImages.inkTop * h * 1080) / 1080;
+  // the ink keeps the design's margin from the edge, whatever the file's own
+  const margin = S * LOGO_MARGIN;
   const y = p.logo === "top" ? margin - logoImages.inkTop * h : H - margin - logoImages.inkBottom * h;
   return { x, y, w, h };
 }
