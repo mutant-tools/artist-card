@@ -85,6 +85,7 @@ let raf = 0;
 function draw() {
   layout = render(ctx, params, scene, time % scene.tl.total, 1, image);
   drawFalloffHandle();
+  drawResizeHandles();
 }
 function schedule() {
   syncHash();
@@ -1762,13 +1763,53 @@ function blockAt(x: number, y: number): StackKey | null {
  */
 function infoEdgeAt(x: number, y: number, k: number): (typeof INFO_KEYS)[number] | null {
   if (params.layout === "reveal") return null;
-  const reach = 6 * k;
+  const reach = 8 * k;
   for (const key of INFO_KEYS) {
     const r = layout.blocks[key];
     if (!r || y < r.y || y > r.y + r.h) continue;
     if (Math.abs(x - r.x) <= reach || Math.abs(x - (r.x + r.w)) <= reach) return key;
   }
   return null;
+}
+// The info block under the pointer (or being resized) shows a grip on each
+// side edge, so it is clear the edges can be dragged.
+let gripKey: (typeof INFO_KEYS)[number] | null = null;
+let gripHot = false; // the pointer is on an edge, or dragging it
+function setGrip(key: (typeof INFO_KEYS)[number] | null, hot: boolean) {
+  if (key === gripKey && hot === gripHot) return;
+  gripKey = key;
+  gripHot = hot;
+  schedule();
+}
+function drawResizeHandles() {
+  const r = gripKey && layout.blocks[gripKey];
+  if (!r || playing) return;
+  const rect = canvas.getBoundingClientRect();
+  const k = rect.width ? canvas.width / rect.width : 2;
+  const gh = Math.min(r.h - 6 * k, 28 * k); // grip height
+  const gw = 6 * k;
+  const cy = r.y + r.h / 2;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (gripHot) {
+    // the edges themselves light up while one is held or about to be
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(r.x - 1.5 * k, r.y, 3 * k, r.h);
+    ctx.fillRect(r.x + r.w - 1.5 * k, r.y, 3 * k, r.h);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(r.x - 0.5 * k, r.y, k, r.h);
+    ctx.fillRect(r.x + r.w - 0.5 * k, r.y, k, r.h);
+  }
+  for (const x of [r.x, r.x + r.w]) {
+    ctx.beginPath();
+    ctx.roundRect(x - gw / 2, cy - gh / 2, gw, gh, gw / 2);
+    ctx.fillStyle = gripHot ? "#ffffff" : "rgba(255,255,255,0.85)";
+    ctx.fill();
+    ctx.lineWidth = k;
+    ctx.strokeStyle = "#737373";
+    ctx.stroke();
+  }
+  ctx.restore();
 }
 function resizeInfo(key: (typeof INFO_KEYS)[number], x: number) {
   const W = canvas.width;
@@ -1980,6 +2021,7 @@ canvas.addEventListener("pointerdown", (e) => {
   if (edgeKey) {
     drag = "resize";
     canvas.classList.add("resize-drag");
+    setGrip(edgeKey, true);
   } else if (dragKey) {
     const r = layout.blocks[dragKey]!;
     grabDY = pt.y - (r.y + r.h / 2);
@@ -2001,9 +2043,12 @@ canvas.addEventListener("pointermove", (e) => {
   if (!pt) return;
   if (drag === "none") {
     const overF = overFalloff(pt.x, pt.y, pt.k);
-    const overE = !overF && !!infoEdgeAt(pt.x, pt.y, pt.k);
+    const edge = overF ? null : infoEdgeAt(pt.x, pt.y, pt.k);
+    const overE = !!edge;
     canvas.classList.toggle("resize-hover", overE);
-    const overB = !overF && !overE && !!blockAt(pt.x, pt.y);
+    const under = overF || overE ? null : blockAt(pt.x, pt.y);
+    setGrip(edge ?? (under && isInfoKey(under) ? under : null), overE);
+    const overB = !!under;
     const over = !overF && !overB && overArtist(pt.x, pt.y);
     canvas.classList.toggle("falloff-hover", overF);
     canvas.classList.toggle("block-hover", overB);
@@ -2066,6 +2111,7 @@ canvas.addEventListener("pointermove", (e) => {
 for (const ev of ["pointerup", "pointercancel"]) {
   canvas.addEventListener(ev, () => {
     canvas.classList.remove("panning", "block-drag", "resize-drag");
+    if (drag === "resize") setGrip(gripKey, false);
     drag = "none";
     dragKey = null;
   });
@@ -2078,6 +2124,7 @@ canvas.addEventListener("dblclick", (e) => {
   schedule();
 });
 canvas.addEventListener("pointerleave", () => {
+  if (drag !== "resize") setGrip(null, false);
   canvas.classList.remove("label-hover", "pan", "falloff-hover", "block-hover");
 });
 
