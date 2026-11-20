@@ -322,7 +322,7 @@ export function buildIdml(spec: IdmlSpec): { files: Record<string, Uint8Array>; 
       const fid = nextId();
       const sid = nextId();
       items.push(
-        `<TextFrame Self="${fid}" ParentStory="${sid}" PreviousTextFrame="n" NextTextFrame="n" ContentType="TextType" ${ITEM_COMMON.replace('Name="$ID/"', `Name="${esc(b.text)}"`)} FillColor="Swatch/None" StrokeColor="Swatch/None" StrokeWeight="0" ItemTransform="1 0 0 1 ${num(ox + x)} ${num(oy + r.top)}">` +
+        `<TextFrame Self="${fid}" ParentStory="${sid}" PreviousTextFrame="n" NextTextFrame="n" ContentType="TextType" ${ITEM_COMMON.replace('Name="$ID/"', `Name="${esc(b.text.replace(/\s+/g, " ").slice(0, 60))}"`)} FillColor="Swatch/None" StrokeColor="Swatch/None" StrokeWeight="0" ItemTransform="1 0 0 1 ${num(ox + x)} ${num(oy + r.top)}">` +
           rectGeometry(0, 0, b.w, b.h) +
           `<TextFramePreference TextColumnCount="1" TextColumnFixedWidth="${num(b.w)}" FirstBaselineOffset="CapHeight" MinimumFirstBaselineOffset="0" VerticalJustification="TopAlign" AutoSizingType="HeightAndWidth" AutoSizingReferencePoint="TopCenterPoint" UseMinimumHeightForAutoSizing="false" MinimumHeightForAutoSizing="0" UseMinimumWidthForAutoSizing="false" MinimumWidthForAutoSizing="0" UseNoLineBreaksForAutoSizing="true">` +
           `<Properties><InsetSpacing type="list"><ListItem type="unit">${num(b.padTop)}</ListItem><ListItem type="unit">${num(b.padX)}</ListItem><ListItem type="unit">${num(b.padBottom)}</ListItem><ListItem type="unit">${num(b.padX)}</ListItem></InsetSpacing></Properties>` +
@@ -338,8 +338,8 @@ export function buildIdml(spec: IdmlSpec): { files: Record<string, Uint8Array>; 
         `<ParagraphStyleRange AppliedParagraphStyle="ParagraphStyle/$ID/NormalParagraphStyle" Justification="CenterAlign" ParagraphShadingOn="true" ParagraphShadingTint="100" ParagraphShadingWidth="TextWidth" ParagraphShadingTopOrigin="BaselineTopOrigin" ParagraphShadingBottomOrigin="BaselineBottomOrigin" ParagraphShadingTopOffset="${num(b.capH + b.padTop)}" ParagraphShadingBottomOffset="${num(b.padBottom)}" ParagraphShadingLeftOffset="${num(b.padX)}" ParagraphShadingRightOffset="${num(b.padX)}" ParagraphShadingClipToFrame="false">` +
         `<Properties><ParagraphShadingColor type="object">${bg}</ParagraphShadingColor></Properties>` +
         `<CharacterStyleRange AppliedCharacterStyle="CharacterStyle/$ID/[No character style]" FontStyle="${esc(spec.font.style)}" PointSize="${num(b.fs)}" Tracking="${num(b.tracking * 1000)}" FillColor="${fg}">` +
-        `<Properties><Leading type="unit">${num(b.capH)}</Leading><AppliedFont type="string">${esc(spec.font.family)}</AppliedFont></Properties>` +
-        `<Content>${esc(b.text)}</Content></CharacterStyleRange></ParagraphStyleRange></Story></idPkg:Story>`;
+        `<Properties><Leading type="unit">${num(b.lines ? (b.lineH ?? b.fs) : b.capH)}</Leading><AppliedFont type="string">${esc(spec.font.family)}</AppliedFont></Properties>` +
+        `<Content>${esc(b.lines ? b.lines.join("\u2028") : b.text)}</Content></CharacterStyleRange></ParagraphStyleRange></Story></idPkg:Story>`;
       x += b.w + spec.gap;
     }
   }

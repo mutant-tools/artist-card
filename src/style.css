@@ -408,3 +408,14 @@ input[type="text"]:focus { background: var(--surface-hover); }
   justify-self: start;
 }
 .help-panel .what { line-height: 1.1; }
+
+/* Info: a wrapped paragraph, with its size stepper (– / S M L / +) standing next to it */
+.row.field > .with-btn.para { align-items: stretch; }
+.with-btn.para > textarea { height: auto; min-height: 102px; padding: 12px 24px; line-height: 1.3; }
+.with-btn.para > .btn.tall { height: auto; align-self: stretch; }
+.vstep { display: flex; flex-direction: column; gap: var(--row-gap); flex: 0 0 20px; }
+.vstep > .btn { flex: 0 0 var(--control) !important; height: var(--control); }
+.vstep > .btn.grow { flex: 1 1 auto !important; height: auto; }
+.bg-swatches > .btn { flex: 1 1 0; min-width: 0; padding: 0; }
+.bg-swatches > .btn.active { box-shadow: inset 0 0 0 3px var(--bg, #fff), inset 0 0 0 4px var(--text); }
+canvas.resize-hover, canvas.resize-drag { cursor: ew-resize; }

@@ -83,11 +83,19 @@ export function buildIllustratorSvg(spec: IdmlSpec): { svg: string; name: string
     let x = r.cx + r.shift - r.w / 2;
     const parts: string[] = [];
     for (const b of r.blocks) {
-      parts.push(`<g id="${esc(b.text)}">`);
+      parts.push(`<g id="${esc(b.text.replace(/\s+/g, " ").slice(0, 40))}">`);
       parts.push(`<rect x="${num(x)}" y="${num(r.top)}" width="${num(b.w)}" height="${num(b.h)}" fill="${spec.colors.bg}"/>`);
       if (b.icon) {
         // the icon's paths where the text would stand, in the text colour
         parts.push(`<g transform="translate(${num(x + b.padX)} ${num(r.top + b.padTop)}) scale(${num(b.icon.w / svgViewBoxWidth(b.icon.svg))})">${svgPaths(b.icon.svg, spec.colors.text).join("")}</g>`);
+      } else if (b.lines) {
+        // a paragraph: every line its own centred text, on the tool's leading
+        b.lines.forEach((line, j) => {
+          if (line)
+            parts.push(
+              `<text x="${num(x + b.w / 2)}" y="${num(r.top + b.padTop + b.capH + j * (b.lineH ?? b.fs))}" text-anchor="middle" font-family="'Avantt-Bold', '${esc(spec.font.family)}'" font-weight="${LABEL_WEIGHT}" font-size="${num(b.fs)}" letter-spacing="${num(b.tracking * b.fs)}" style="letter-spacing:${num(b.tracking * b.fs)}px" fill="${spec.colors.text}" xml:space="preserve">${esc(line)}</text>`,
+            );
+        });
       } else
         parts.push(
           `<text x="${num(x + b.padX)}" y="${num(r.top + b.padTop + b.capH)}" font-family="'Avantt-Bold', '${esc(spec.font.family)}'" font-weight="${LABEL_WEIGHT}" font-size="${num(b.fs)}" letter-spacing="${num(b.tracking * b.fs)}" style="letter-spacing:${num(b.tracking * b.fs)}px" fill="${spec.colors.text}" xml:space="preserve">${esc(b.text)}</text>`,

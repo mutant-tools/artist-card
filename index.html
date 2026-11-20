@@ -48,6 +48,7 @@
               <button type="button" class="btn" data-preset="2" title="Infos Pratiques: side blocks, title at the top, sentence at the bottom">2</button>
               <button type="button" class="btn" data-preset="3" title="Full blocks: the stripes held open around the photo, logo at the bottom">3</button>
               <button type="button" class="btn" data-preset="4" title="App TMB26: one strip at the bottom, title and sentence at the top">4</button>
+              <button type="button" class="btn" data-preset="5" title="Paragraph: no photo, a title and a wrapped text on a colour; rows or full page">5</button>
             </div>
           </section>
         </div>
@@ -79,33 +80,49 @@
           <label class="row field" id="stageRow"><span class="lbl">Stage</span><input type="text" id="stageText" spellcheck="false" /></label>
           <div class="row field tall" id="infoRow">
             <span class="lbl">Info</span>
-            <div class="with-btn two">
+            <div class="with-btn para">
               <textarea id="infoText" rows="1" spellcheck="false"></textarea>
-              <button type="button" class="btn w20 tall" id="infoSizeBtn" title="Sentence size: S = 12 px, M = 18 px">S</button>
+              <div class="vstep" title="Type size of this block">
+                <button type="button" class="btn w20" id="infoSizeDown" title="Smaller">&ndash;</button>
+                <button type="button" class="btn w20 grow" id="infoSizeBtn" title="Click: S, M, L">S</button>
+                <button type="button" class="btn w20" id="infoSizeUp" title="Larger">+</button>
+              </div>
               <button type="button" class="btn w20 tall" id="infoAddBtn" title="Add another info block (up to four)">+</button>
             </div>
           </div>
           <div class="row field tall" id="info2Row" hidden>
             <span class="lbl">Info 2</span>
-            <div class="with-btn two">
+            <div class="with-btn para">
               <textarea id="info2Text" rows="1" spellcheck="false"></textarea>
-              <button type="button" class="btn w20 tall" id="info2SizeBtn" title="Sentence size of this block: S = 12 px, M = 18 px">S</button>
+              <div class="vstep" title="Type size of this block">
+                <button type="button" class="btn w20" id="info2SizeDown" title="Smaller">&ndash;</button>
+                <button type="button" class="btn w20 grow" id="info2SizeBtn" title="Click: S, M, L">S</button>
+                <button type="button" class="btn w20" id="info2SizeUp" title="Larger">+</button>
+              </div>
               <button type="button" class="btn w20 tall" id="info2RemoveBtn" title="Remove this info block">&ndash;</button>
             </div>
           </div>
           <div class="row field tall" id="info3Row" hidden>
             <span class="lbl">Info 3</span>
-            <div class="with-btn two">
+            <div class="with-btn para">
               <textarea id="info3Text" rows="1" spellcheck="false"></textarea>
-              <button type="button" class="btn w20 tall" id="info3SizeBtn" title="Sentence size of this block: S = 12 px, M = 18 px">S</button>
+              <div class="vstep" title="Type size of this block">
+                <button type="button" class="btn w20" id="info3SizeDown" title="Smaller">&ndash;</button>
+                <button type="button" class="btn w20 grow" id="info3SizeBtn" title="Click: S, M, L">S</button>
+                <button type="button" class="btn w20" id="info3SizeUp" title="Larger">+</button>
+              </div>
               <button type="button" class="btn w20 tall" id="info3RemoveBtn" title="Remove this info block">&ndash;</button>
             </div>
           </div>
           <div class="row field tall" id="info4Row" hidden>
             <span class="lbl">Info 4</span>
-            <div class="with-btn two">
+            <div class="with-btn para">
               <textarea id="info4Text" rows="1" spellcheck="false"></textarea>
-              <button type="button" class="btn w20 tall" id="info4SizeBtn" title="Sentence size of this block: S = 12 px, M = 18 px">S</button>
+              <div class="vstep" title="Type size of this block">
+                <button type="button" class="btn w20" id="info4SizeDown" title="Smaller">&ndash;</button>
+                <button type="button" class="btn w20 grow" id="info4SizeBtn" title="Click: S, M, L">S</button>
+                <button type="button" class="btn w20" id="info4SizeUp" title="Larger">+</button>
+              </div>
               <button type="button" class="btn w20 tall" id="info4RemoveBtn" title="Remove this info block">&ndash;</button>
             </div>
           </div>
@@ -120,6 +137,10 @@
               </div>
               <button type="button" class="btn" id="imageRemoveBtn" disabled>Remove</button>
             </div>
+          </div>
+          <div class="row field" id="bgRow">
+            <span class="lbl">BG</span>
+            <div class="seg bg-swatches" id="bgSeg" title="The card's colour when there is no photo (click again to clear)"></div>
           </div>
           <div class="row field">
             <span class="lbl">Music</span>
@@ -171,6 +192,16 @@
               <button type="button" class="btn" data-iconpos="lb" title="Bottom left corner">LB</button>
               <button type="button" class="btn" data-iconpos="rb" title="Bottom right corner">RB</button>
               <button type="button" class="btn active" data-iconpos="inline" title="A block in the stack with the other text blocks; drag it on the preview like any block">Inline</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="group" id="styleGroup" hidden>
+          <div class="row field" id="styleRow">
+            <span class="lbl">Style</span>
+            <div class="seg" id="styleSeg">
+              <button type="button" class="btn active" data-style="row" title="Strip rows at the top and bottom edges">Rows</button>
+              <button type="button" class="btn" data-style="page" title="The closed card: rows over the whole card, text on top">Full-Page</button>
             </div>
           </div>
         </section>

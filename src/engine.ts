@@ -13,9 +13,18 @@ export type Bezier = [number, number, number, number];
 export type Focus = "top" | "bottom";
 export type StaggerOrder = "center" | "top" | "bottom";
 /** reveal = the two-stage construction; the others are one-stage posters */
-export type LayoutKind = "reveal" | "none" | "row" | "side" | "full";
+export type LayoutKind = "reveal" | "none" | "row" | "side" | "full" | "page"; // page: the closed card, rows over the whole card, never opening
 export type StackAnchor = "top" | "bottom";
-export type InfoSize = "s" | "m";
+export type InfoSize = "s" | "m" | "l";
+/** The info sizes' defaults, in px on the 540 px wide design. */
+export const INFO_SIZES: Record<InfoSize, number> = { s: 12, m: 18, l: 24 };
+export const INFO_SIZE_MIN = 8;
+export const INFO_SIZE_MAX = 72;
+/** The letter a size goes by: whichever default it is nearest to. */
+export function infoSizeLabel(px: number): InfoSize {
+  return px < (INFO_SIZES.s + INFO_SIZES.m) / 2 ? "s" : px < (INFO_SIZES.m + INFO_SIZES.l) / 2 ? "m" : "l";
+}
+export type BgColor = "" | "topA" | "topB" | "bottomA" | "bottomB" | "labelBg";
 export type StackKey = "icon" | "title" | "day" | "time" | "artist" | "stage" | "info" | "info2" | "info3" | "info4";
 export const STACK_KEYS: StackKey[] = ["icon", "title", "day", "time", "artist", "stage", "info", "info2", "info3", "info4"];
 /** The info sentence and the extra ones added with +. */
@@ -39,8 +48,12 @@ export function freeGroups(p: Params, present: (k: StackKey) => boolean): StackK
   return out;
 }
 /** The size of one info block: the extra ones follow the first until they are given their own. */
-export function infoSizeOf(p: Params, key: InfoKey): InfoSize {
+export function infoSizeOf(p: Params, key: InfoKey): number {
   return key === "info" ? p.infoSize : p[`${key}Size`] || p.infoSize;
+}
+/** The widest an info block may be, as a fraction of the card's width (0 = the default margin). */
+export function infoWidthOf(p: Params, key: InfoKey): number {
+  return p[key === "info" ? "infoW" : (`${key}W` as "info2W")];
 }
 export type LogoPos = "off" | "top" | "bottom";
 export type LogoColor = "black" | "white";
@@ -131,10 +144,15 @@ export interface Params {
   groups: string; // free blocks snapped together: "info+info3;day+time", each group top to bottom; its members share one free value (the group's centre)
   stackY: number; // one-stage layouts: the stack's edge as a fraction of H (bottom edge, or top edge with stackAnchor top)
   stackAnchor: StackAnchor;
-  infoSize: InfoSize; // s = the 12 px sentence, m = the 18 px small block
-  info2Size: InfoSize | ""; // the extra info blocks: their own size, "" = the first one's
-  info3Size: InfoSize | "";
-  info4Size: InfoSize | "";
+  infoSize: number; // px on the 540 px design: 12 = S (the sentence), 18 = M, 24 = L
+  info2Size: number; // the extra info blocks: their own size, 0 = the first one's
+  info3Size: number;
+  info4Size: number;
+  infoW: number; // the widest the block may be before its text wraps, as a fraction of the card's width; 0 = the default margin
+  info2W: number;
+  info3W: number;
+  info4W: number;
+  bgColor: BgColor; // the card's colour where there is no photo: one of the stripe colours or the blocks' yellow; "" = none
   preset: number; // the example last applied (1..4); 2..4 bring their own photo
   logo: LogoPos;
   logoColor: LogoColor;
@@ -216,10 +234,15 @@ export const DEFAULT_PARAMS: Params = {
   groups: "",
   stackY: (1350 - 103) / 1350,
   stackAnchor: "bottom",
-  infoSize: "s",
-  info2Size: "",
-  info3Size: "",
-  info4Size: "",
+  infoSize: INFO_SIZES.s,
+  info2Size: 0,
+  info3Size: 0,
+  info4Size: 0,
+  infoW: 0,
+  info2W: 0,
+  info3W: 0,
+  info4W: 0,
+  bgColor: "",
   preset: 1,
   logo: "off",
   logoColor: "black",
@@ -324,7 +347,7 @@ export function stackBlockCount(p: Params): number {
     else if (key === "artist") n += wordsOf(p.artist) + (p.artist.trim() && p.artist2.trim() ? 1 + wordsOf(p.artist2) : 0);
     else if (key === "stage") n += wordsOf(p.stage);
     else if (key === "icon") n += iconInline(p) ? 1 : 0;
-    else if (isInfoKey(key)) n += p[key].split(/\n/).filter((l) => l.trim()).length;
+    else if (isInfoKey(key)) n += p[key].trim() ? 1 : 0;
   }
   return n;
 }
@@ -1011,6 +1034,8 @@ export interface SpecBlock {
   capH: number;
   tracking: number; // em
   icon?: { svg: string; w: number; h: number }; // the TMB icon instead of text: the artwork and its ink size
+  lines?: string[]; // a wrapped paragraph: its lines (centred, "" = an empty line); `text` is them joined by line breaks
+  lineH?: number; // baseline to baseline
 }
 export interface SpecRow {
   key: string; // stack key, or "seam" / "artist" in the reveal
@@ -1136,6 +1161,8 @@ interface Block {
   capH: number;
   tracking: number;
   icon?: { w: number; h: number }; // the TMB icon instead of text: its ink size
+  lines?: { text: string; w: number }[]; // a wrapped paragraph, every line centred
+  lineH?: number;
 }
 interface LabelRow {
   blocks: Block[];
@@ -1209,6 +1236,51 @@ function rowOf(blocks: Block[], gap: number, shift = 0): LabelRow {
     h: blocks.reduce((a, b) => Math.max(a, b.h), 0),
     shift,
   };
+}
+
+/** Figma's 130% leading for the paragraphs. */
+export const PARAGRAPH_LEADING = 1.3;
+/**
+ * An info text as ONE block: its words wrapped to `maxW` (the block's
+ * outer width), line breaks kept, lines centred, 130% leading and no
+ * padding between the lines. `px` is the size on the 540 px design. The
+ * block hugs its longest line. One line keeps the sentence's even padding;
+ * a paragraph takes the design's 2/3 above and 4/3 below.
+ */
+function paragraphRow(ctx: CanvasRenderingContext2D, text: string, px: number, S: number, maxW: number, family: string): LabelRow | null {
+  const paras = text.replace(/\s+$/, "").replace(/^\s*\n/, "").split(/\n/).map((l) => l.trim());
+  if (!paras.some(Boolean)) return null;
+  const fs = (px / D) * S;
+  const tracking = px <= INFO_SIZES.s ? 0 : LABEL_TRACKING;
+  const padX = (3 / D) * S;
+  ctx.font = labelFont(fs, family);
+  setTracking(ctx, fs, 0);
+  const capH = ctx.measureText("H").actualBoundingBoxAscent || fs * 0.7;
+  const widthOf = (t: string) => ctx.measureText(t).width + tracking * fs * Math.max(0, [...t].length - 1);
+  const room = Math.max(fs, maxW - 2 * padX);
+  const lines: { text: string; w: number }[] = [];
+  for (const para of paras) {
+    if (!para) {
+      lines.push({ text: "", w: 0 });
+      continue;
+    }
+    let cur = "";
+    for (const word of para.split(/\s+/)) {
+      const next = cur ? `${cur} ${word}` : word;
+      if (cur && widthOf(next) > room) {
+        lines.push({ text: cur, w: widthOf(cur) });
+        cur = word;
+      } else cur = next;
+    }
+    lines.push({ text: cur, w: widthOf(cur) });
+  }
+  const lineH = PARAGRAPH_LEADING * fs;
+  const many = lines.length > 1;
+  const padTop = ((many ? (px * 2) / 3 : px) / D) * S;
+  const padBottom = ((many ? (px * 4) / 3 : px) / D) * S;
+  const w = lines.reduce((a, l) => Math.max(a, l.w), 0) + 2 * padX;
+  const h = padTop + capH + (lines.length - 1) * lineH + padBottom;
+  return rowOf([{ text: lines.map((l) => l.text).join("\n"), w, h, fs, padX, padTop, capH, tracking, lines: many ? lines : undefined, lineH: many ? lineH : undefined }], 0);
 }
 
 /** One row of blocks, the font shrunk when the row would not fit `maxW`. */
@@ -1302,9 +1374,11 @@ function drawRow(
         fs: b.fs,
         padX: b.padX,
         padTop: b.padTop,
-        padBottom: b.h - b.padTop - b.capH,
+        padBottom: b.h - b.padTop - b.capH - (b.lines ? (b.lines.length - 1) * b.lineH! : 0),
         capH: b.capH,
         tracking: b.tracking,
+        lines: b.lines?.map((l) => l.text),
+        lineH: b.lineH,
         icon: b.icon && logoSet.icon ? { svg: logoSet.icon.svg, w: b.icon.w, h: b.icon.h } : undefined,
       })),
     });
@@ -1337,6 +1411,10 @@ function drawRow(
       if (b.icon && logoSet.icon) {
         const img = /^#f{6}$/i.test(colors.labelText) ? logoSet.icon.white : logoSet.icon.black;
         ctx.drawImage(img, bx + b.padX, top + b.padTop, b.icon.w, b.icon.h);
+      } else if (b.lines) {
+        b.lines.forEach((l, j) => {
+          if (l.text) ctx.fillText(l.text, bx + (b.w - l.w) / 2, top + b.padTop + b.capH + j * b.lineH!);
+        });
       } else ctx.fillText(b.text, bx + b.padX, top + b.padTop + b.capH);
       ctx.restore();
     }
@@ -1481,6 +1559,10 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
   if (image) {
     const c = coverRect(image, W, H, p.imageZoom, p.imageX, p.imageY);
     ctx.drawImage(image.source, c.x, c.y, c.dw, c.dh);
+  } else if (p.bgColor && p.colors[p.bgColor]) {
+    // no photo: the card in one of its own colours
+    ctx.fillStyle = p.colors[p.bgColor];
+    ctx.fillRect(0, 0, W, H);
   }
 
   for (const r of scene.rows) {
@@ -1654,13 +1736,11 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
       rows = artistRows(ctx, p, S, gap, maxW, fam);
     } else if (key === "stage") rows = wrapRows(ctx, words(p.stage, hasArtist), hasArtist ? STYLE_SMALL : STYLE_BIG, S, gap, maxW, fam);
     else if (key === "icon") rows = iconInline(p) ? [iconRow(ctx, S, fam)].filter((r): r is LabelRow => !!r) : [];
-    else if (isInfoKey(key))
-      rows = p[key]
-        .split(/\n/)
-        .map((line) => line.trim())
-        .filter(Boolean)
-        .map((line) => layoutRow(ctx, [line], infoSizeOf(p, key) === "m" ? STYLE_SMALL_PLAIN : STYLE_SENTENCE, S, gap, maxW, fam))
-        .filter((r): r is LabelRow => !!r);
+    else if (isInfoKey(key)) {
+      const lim = infoWidthOf(p, key);
+      const row = paragraphRow(ctx, p[key], Math.max(INFO_SIZE_MIN, Math.min(INFO_SIZE_MAX, infoSizeOf(p, key))), S, lim > 0 ? Math.min(W, lim * W) : maxW, fam);
+      rows = row ? [row] : [];
+    }
     if (rows.length) items.set(key, rows);
   }
   const order = [...p.stack.filter((k) => items.has(k)), ...STACK_KEYS.filter((k) => items.has(k) && !p.stack.includes(k))];

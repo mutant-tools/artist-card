@@ -29,6 +29,11 @@ import {
   ICON_POSITIONS,
   INFO_KEYS,
   infoSizeOf,
+  infoSizeLabel,
+  INFO_SIZES,
+  INFO_SIZE_MIN,
+  INFO_SIZE_MAX,
+  type BgColor,
   freeGroups,
   isInfoKey,
   type IconPos,
@@ -172,7 +177,15 @@ function parseHash(h: string): string {
     const freeKey = k.startsWith("free.");
     if (!(k in def) && !freeKey) continue;
     const value: unknown =
-      k === "easing" ? v.split(",").map(Number) : k === "stack" ? v.split(",").filter(Boolean) : freeKey || typeof def[k] === "number" ? parseFloat(v) : v;
+      k === "easing"
+        ? v.split(",").map(Number)
+        : k === "stack"
+          ? v.split(",").filter(Boolean)
+          : /^info\d?Size$/.test(k) && /^[sml]$/.test(v)
+            ? v // an older link: the size as a letter
+            : freeKey || typeof def[k] === "number"
+              ? parseFloat(v)
+              : v;
     const path = k.split(".");
     let host = obj;
     for (const part of path.slice(0, -1)) {
@@ -551,7 +564,7 @@ const setFormatUI = bindSeg<Format>("formatSeg", "format", (v) => {
 // default photo. Applying a preset resets everything but the format.
 const EDGE = 51.5 / 675; // the examples' margin, as a fraction of the height
 const INFO_H = (12 + 12 * 0.694 + 12) / 675; // the sentence block's height
-const PRESET_NAMES: Record<number, string> = { 1: "Reveal", 2: "Infos Pratiques", 3: "Full blocks", 4: "App TMB26" };
+const PRESET_NAMES: Record<number, string> = { 1: "Reveal", 2: "Infos Pratiques", 3: "Full blocks", 4: "App TMB26", 5: "Paragraph" };
 const PRESETS: Record<number, Partial<Params>> = {
   1: {},
   2: {
@@ -567,7 +580,7 @@ const PRESETS: Record<number, Partial<Params>> = {
     artist: "",
     stage: "",
     info: "Tout ce qu\u2019il faut savoir pour pr\u00e9parer ton arriv\u00e9e au TMB !",
-    infoSize: "s",
+    infoSize: INFO_SIZES.s,
     free: { info: 1 - EDGE - INFO_H / 2 },
     stackAnchor: "top",
     stackY: EDGE,
@@ -608,13 +621,35 @@ const PRESETS: Record<number, Partial<Params>> = {
     artist: "",
     stage: "",
     info: "Disponible en t\u00e9l\u00e9chargement !",
-    infoSize: "m",
+    infoSize: INFO_SIZES.m,
     stackAnchor: "top",
     stackY: EDGE,
     colors: { ...DEFAULT_PARAMS.colors, topA: "#8D5DF3", topB: "#0906B7", bottomA: "#FF63F4", bottomB: "#ED00A5" },
   },
+  // the paragraph poster (Figma 612:10222): no photo, a colour, the title
+  // and a wrapped text in the middle; Style picks strip rows or the full page
+  5: {
+    layout: "row",
+    rowsTop: 2,
+    rowsBottom: 2,
+    title: "App TMB26",
+    day: "",
+    timeStart: "",
+    timeEnd: "",
+    artist: "",
+    stage: "",
+    info: "Au TMB, nous mettons un point d\u2019orgue \u00e0 ce que chaque festivalier.e puisse faire la f\u00eate en toute s\u00e9curit\u00e9.\n\nSi vous \u00eates victime ou t\u00e9moin d\u2019un comportement inappropri\u00e9, n\u2019h\u00e9sitez pas \u00e0 solliciter nos \u201cAngels\u201d qui sont d\u00e9ploy\u00e9s gr\u00e2ce \u00e0 l\u2019aide de l\u2019association @fiertespasdecalais. Vous pouvez les retrouver \u00e0 notre stand pr\u00e9vention, ou sur le site du festival, vous les reconna\u00eetrez gr\u00e2ce \u00e0 leurs gilets roses. \ud83e\udd0d",
+    infoSize: INFO_SIZES.m,
+    infoW: 463 / 540,
+    bgColor: "bottomB",
+    stackAnchor: "top",
+    stackY: 177.75 / 679,
+    colors: { ...DEFAULT_PARAMS.colors, topA: "#FF63F4", topB: "#ED00A5", bottomA: "#8D5DF3", bottomB: "#0906B7" },
+  },
 };
+/** The preset's photo; "" = none (the paragraph poster stands on a colour). */
 function presetPhoto(n: number): string {
+  if (n === 5) return "";
   return n >= 2 && n <= 4 ? `${import.meta.env.BASE_URL}presets/p${n}.jpg` : `${import.meta.env.BASE_URL}default.jpg`;
 }
 function applyPreset(n: number) {
@@ -898,15 +933,16 @@ const HIDDEN_STEPS: Record<LayoutKind, NumKey[]> = {
   row: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "irregularity", "shapeSeed", "blockWidth", "floatCount", "floatSize", "floatTravel", "imageFloatCount", "imageFloatSize", "imageFloatTravel"],
   side: [...ONE_STAGE_OFF, "stripPx"],
   full: [...ONE_STAGE_OFF, "stripPx"],
+  page: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "irregularity", "shapeSeed", "stripPx", "blockWidth", "floatCount", "floatSize", "floatTravel", "imageFloatCount", "imageFloatSize", "imageFloatTravel"],
 };
 // Text fields per preset: the artist cards (1, 3) take day, time, artist and
 // stage; the info posters (2, 4) a title and the sentence.
 const TEXT_ROWS: Record<string, number[]> = {
-  titleRow: [2, 4],
-  infoRow: [2, 4],
-  info2Row: [2, 4],
-  info3Row: [2, 4],
-  info4Row: [2, 4],
+  titleRow: [2, 4, 5],
+  infoRow: [2, 4, 5],
+  info2Row: [2, 4, 5],
+  info3Row: [2, 4, 5],
+  info4Row: [2, 4, 5],
   dayRow: [1, 3],
   timeRow: [1, 3],
   artistRow: [1, 3],
@@ -919,6 +955,8 @@ function syncVisibility() {
   const oneStage = layout !== "reveal";
   $<HTMLDivElement>("orderSeg").hidden = oneStage; // the stagger order only shapes the reveal
   $<HTMLDivElement>("colorGroup").hidden = layout === "none"; // no stripes, no stripe colours
+  $<HTMLElement>("styleGroup").hidden = params.preset !== 5; // rows or full page: the paragraph poster's choice
+  setStyleUI(layout === "page" ? "page" : "row");
   for (const [id, presets] of Object.entries(TEXT_ROWS)) $<HTMLElement>(id).hidden = !presets.includes(params.preset);
   if (!TEXT_ROWS.artistRow.includes(params.preset)) artist2Row.hidden = true;
   else artist2Row.hidden = !artist2Shown;
@@ -946,6 +984,12 @@ function bindText(id: string, apply: (v: string) => void) {
 // Title and Info grow with their text: one line is a normal 32 px field,
 // two lines the design's 46 px, and 11 px for every further line.
 function autosize(el: HTMLInputElement) {
+  if (el.parentElement?.classList.contains("para")) {
+    // a paragraph field: as tall as its wrapped text (the buttons stretch with it)
+    el.style.height = "auto";
+    el.style.height = `${Math.max(102, el.scrollHeight)}px`;
+    return;
+  }
   const btns = el.parentElement?.querySelectorAll<HTMLElement>(".btn.tall") ?? [];
   for (const btn of btns) btn.style.height = "";
   el.style.height = "auto";
@@ -991,7 +1035,8 @@ function removeInfo(key: (typeof INFO_KEYS)[number]) {
   for (let j = Math.max(1, i); j < INFO_KEYS.length; j++) {
     const next = INFO_KEYS[j + 1];
     params[INFO_KEYS[j]] = next ? params[next] : "";
-    params[`${INFO_KEYS[j]}Size` as "info2Size"] = next ? params[`${next}Size` as "info2Size"] : "";
+    params[`${INFO_KEYS[j]}Size` as "info2Size"] = next ? params[`${next}Size` as "info2Size"] : 0;
+    params[`${INFO_KEYS[j]}W` as "info2W"] = next ? params[`${next}W` as "info2W"] : 0;
     ungroup(INFO_KEYS[j]);
     infoEls[INFO_KEYS[j]].value = params[INFO_KEYS[j]];
     autosize(infoEls[INFO_KEYS[j]]);
@@ -1004,21 +1049,67 @@ function removeInfo(key: (typeof INFO_KEYS)[number]) {
   rebuild();
 }
 for (const key of INFO_KEYS.slice(1)) $<HTMLButtonElement>(`${key}RemoveBtn`).addEventListener("click", () => removeInfo(key));
+// Type size per info block: the letter is the default it is nearest to
+// (a click steps S > M > L), – and + change it a pixel (on the 540 px
+// design) at a time. The extra blocks follow the first until given their own.
 const infoSizeBtns = Object.fromEntries(INFO_KEYS.map((key) => [key, $<HTMLButtonElement>(`${key}SizeBtn`)])) as Record<(typeof INFO_KEYS)[number], HTMLButtonElement>;
 function syncInfoSizes() {
-  for (const key of INFO_KEYS) infoSizeBtns[key].textContent = infoSizeOf(params, key).toUpperCase();
+  for (const key of INFO_KEYS) {
+    const px = infoSizeOf(params, key);
+    infoSizeBtns[key].textContent = infoSizeLabel(px).toUpperCase();
+    infoSizeBtns[key].title = `${px} px (${px * 2} px at 1080). Click: S ${INFO_SIZES.s}, M ${INFO_SIZES.m}, L ${INFO_SIZES.l}`;
+  }
 }
-for (const key of INFO_KEYS)
+function setInfoSize(key: (typeof INFO_KEYS)[number], px: number) {
+  const v = clamp(Math.round(px), INFO_SIZE_MIN, INFO_SIZE_MAX);
+  if (key === "info") {
+    // the extra blocks that were following the first keep the size they show
+    for (const o of INFO_KEYS.slice(1)) if (!params[`${o}Size`] && params[o]) params[`${o}Size`] = params.infoSize;
+    params.infoSize = v;
+  } else params[`${key}Size`] = v;
+  syncInfoSizes();
+  rebuild();
+}
+for (const key of INFO_KEYS) {
   infoSizeBtns[key].addEventListener("click", () => {
-    const next = infoSizeOf(params, key) === "s" ? "m" : "s";
-    if (key === "info") {
-      // the extra blocks that were following the first keep the size they show
-      for (const o of INFO_KEYS.slice(1)) if (!params[`${o}Size`] && params[o]) params[`${o}Size`] = params.infoSize;
-      params.infoSize = next;
-    } else params[`${key}Size`] = next;
-    syncInfoSizes();
+    const cur = infoSizeLabel(infoSizeOf(params, key));
+    setInfoSize(key, INFO_SIZES[cur === "s" ? "m" : cur === "m" ? "l" : "s"]);
+  });
+  $<HTMLButtonElement>(`${key}SizeDown`).addEventListener("click", () => setInfoSize(key, infoSizeOf(params, key) - 1));
+  $<HTMLButtonElement>(`${key}SizeUp`).addEventListener("click", () => setInfoSize(key, infoSizeOf(params, key) + 1));
+}
+
+// Background colour (no photo): the four stripe colours and the blocks' yellow.
+const BG_KEYS: Exclude<BgColor, "">[] = ["topA", "topB", "bottomA", "bottomB", "labelBg"];
+const bgSeg = $<HTMLDivElement>("bgSeg");
+const bgBtns = BG_KEYS.map((k) => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "btn";
+  b.addEventListener("click", () => {
+    params.bgColor = params.bgColor === k ? "" : k;
+    syncBg();
     rebuild();
   });
+  bgSeg.appendChild(b);
+  return b;
+});
+function syncBg() {
+  BG_KEYS.forEach((k, i) => {
+    bgBtns[i].style.background = params.colors[k];
+    bgBtns[i].classList.toggle("active", params.bgColor === k);
+  });
+}
+// Style (the paragraph poster): strip rows at the edges, or the closed card over the whole page.
+const setStyleUI = bindSeg<"row" | "page">("styleSeg", "style", (v) => {
+  if (params.layout === v) return;
+  params.layout = v;
+  // each style has its own sensible rows: two strips per edge, or the closed card's rows
+  params.rowsTop = v === "row" ? 2 : DEFAULT_PARAMS.rowsTop;
+  params.rowsBottom = v === "row" ? 2 : DEFAULT_PARAMS.rowsBottom;
+  syncUI();
+  rebuild();
+});
 const artist2Row = $<HTMLDivElement>("artist2Row");
 const artist2AddBtn = $<HTMLButtonElement>("artist2AddBtn");
 const artistLbl = $<HTMLSpanElement>("artistLbl");
@@ -1074,6 +1165,7 @@ function setColor(key: keyof Colors, hex: string) {
   }
   syncColorway();
   syncBlockRow();
+  syncBg();
   schedule();
 }
 function closePicker() {
@@ -1638,9 +1730,10 @@ function overArtist(x: number, y: number): boolean {
   const r = layout.artistRect;
   return !!r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
-type DragMode = "none" | "label" | "pan" | "falloff" | "block" | "stack" | "group";
+type DragMode = "none" | "label" | "pan" | "falloff" | "block" | "stack" | "group" | "resize";
 let drag: DragMode = "none";
 let dragMoved = false;
+let emptyDown = false; // the last press landed on nothing draggable
 let lastX = 0;
 let lastY = 0;
 // One-stage layouts: every block row can be dragged up or down (rows are
@@ -1661,6 +1754,26 @@ function blockAt(x: number, y: number): StackKey | null {
     if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return key;
   }
   return null;
+}
+/**
+ * The info block whose left or right edge is under the pointer: dragging
+ * that edge sets how wide the text may run before it wraps (the block
+ * stays centred, so both edges move). Double-click = back to the default.
+ */
+function infoEdgeAt(x: number, y: number, k: number): (typeof INFO_KEYS)[number] | null {
+  if (params.layout === "reveal") return null;
+  const reach = 6 * k;
+  for (const key of INFO_KEYS) {
+    const r = layout.blocks[key];
+    if (!r || y < r.y || y > r.y + r.h) continue;
+    if (Math.abs(x - r.x) <= reach || Math.abs(x - (r.x + r.w)) <= reach) return key;
+  }
+  return null;
+}
+function resizeInfo(key: (typeof INFO_KEYS)[number], x: number) {
+  const W = canvas.width;
+  params[key === "info" ? "infoW" : (`${key}W` as "info2W")] = clamp((2 * Math.abs(x - W / 2)) / W, 0.1, 1);
+  schedule();
 }
 function stackedKeys(): StackKey[] {
   // the same order the engine draws in: blocks missing from params.stack (an
@@ -1862,8 +1975,12 @@ canvas.addEventListener("pointerdown", (e) => {
   if (!pt) return;
   const wasSelected = falloffSelected;
   falloffSelected = overFalloff(pt.x, pt.y, pt.k);
-  dragKey = falloffSelected ? null : blockAt(pt.x, pt.y);
-  if (dragKey) {
+  const edgeKey = falloffSelected ? null : infoEdgeAt(pt.x, pt.y, pt.k);
+  dragKey = falloffSelected ? null : (edgeKey ?? blockAt(pt.x, pt.y));
+  if (edgeKey) {
+    drag = "resize";
+    canvas.classList.add("resize-drag");
+  } else if (dragKey) {
     const r = layout.blocks[dragKey]!;
     grabDY = pt.y - (r.y + r.h / 2);
     drag = !e.shiftKey ? "block" : params.free[dragKey] !== undefined ? "group" : "stack";
@@ -1873,6 +1990,7 @@ canvas.addEventListener("pointerdown", (e) => {
     canvas.classList.add("block-drag");
   } else drag = falloffSelected ? "falloff" : overArtist(pt.x, pt.y) ? "label" : image ? "pan" : "none";
   if (wasSelected !== falloffSelected) schedule();
+  emptyDown = drag === "none" && !falloffSelected;
   dragMoved = false;
   lastX = e.clientX;
   lastY = e.clientY;
@@ -1883,7 +2001,9 @@ canvas.addEventListener("pointermove", (e) => {
   if (!pt) return;
   if (drag === "none") {
     const overF = overFalloff(pt.x, pt.y, pt.k);
-    const overB = !overF && !!blockAt(pt.x, pt.y);
+    const overE = !overF && !!infoEdgeAt(pt.x, pt.y, pt.k);
+    canvas.classList.toggle("resize-hover", overE);
+    const overB = !overF && !overE && !!blockAt(pt.x, pt.y);
     const over = !overF && !overB && overArtist(pt.x, pt.y);
     canvas.classList.toggle("falloff-hover", overF);
     canvas.classList.toggle("block-hover", overB);
@@ -1897,7 +2017,10 @@ canvas.addEventListener("pointermove", (e) => {
   dragMoved = true;
   lastX = e.clientX;
   lastY = e.clientY;
-  if (drag === "block") {
+  if (drag === "resize") {
+    resizeInfo(dragKey as (typeof INFO_KEYS)[number], pt.x);
+    return;
+  } else if (drag === "block") {
     dragBlock(pt.y, pt.k);
     return;
   } else if (drag === "group") {
@@ -1942,11 +2065,18 @@ canvas.addEventListener("pointermove", (e) => {
 });
 for (const ev of ["pointerup", "pointercancel"]) {
   canvas.addEventListener(ev, () => {
-    canvas.classList.remove("panning", "block-drag");
+    canvas.classList.remove("panning", "block-drag", "resize-drag");
     drag = "none";
     dragKey = null;
   });
 }
+canvas.addEventListener("dblclick", (e) => {
+  const pt = canvasPoint(e as PointerEvent);
+  const key = pt && infoEdgeAt(pt.x, pt.y, pt.k);
+  if (!key) return;
+  params[key === "info" ? "infoW" : (`${key}W` as "info2W")] = 0;
+  schedule();
+});
 canvas.addEventListener("pointerleave", () => {
   canvas.classList.remove("label-hover", "pan", "falloff-hover", "block-hover");
 });
@@ -1995,7 +2125,8 @@ canvas.addEventListener("click", () => {
     dragMoved = false;
     return;
   }
-  if (!image) fileInput.click();
+  // an empty card opens the file picker, but not when the press was on a block or a handle
+  if (!image && emptyDown) fileInput.click();
 });
 
 // ---------- music ----------
@@ -2221,21 +2352,31 @@ function applySettings(str: string): boolean {
     params.stackAnchor = obj.stackAnchor;
     applied++;
   }
-  if (obj.infoSize === "s" || obj.infoSize === "m") {
-    params.infoSize = obj.infoSize;
+  // sizes: px on the 540 px design; older links and files say "s" / "m"
+  const sizeOf = (v: unknown): number | null =>
+    v === "s" || v === "m" || v === "l" ? INFO_SIZES[v] : typeof v === "number" && Number.isFinite(v) ? v : null;
+  for (const k of ["infoSize", "info2Size", "info3Size", "info4Size"] as const) {
+    const v = obj[k] === "" ? 0 : sizeOf(obj[k]);
+    if (v === null) continue;
+    params[k] = v === 0 && k !== "infoSize" ? 0 : clamp(Math.round(v), INFO_SIZE_MIN, INFO_SIZE_MAX);
     applied++;
   }
-  for (const k of ["info2Size", "info3Size", "info4Size"] as const) {
-    if (obj[k] === "s" || obj[k] === "m" || obj[k] === "") {
-      params[k] = obj[k];
+  for (const k of ["infoW", "info2W", "info3W", "info4W"] as const) {
+    const v = obj[k];
+    if (typeof v === "number" && Number.isFinite(v)) {
+      params[k] = clamp(v, 0, 1);
       applied++;
     }
   }
-  if (typeof obj.preset === "number" && obj.preset >= 1 && obj.preset <= 4) {
+  if (obj.bgColor === "" || (typeof obj.bgColor === "string" && (BG_KEYS as string[]).includes(obj.bgColor))) {
+    params.bgColor = obj.bgColor as BgColor;
+    applied++;
+  }
+  if (typeof obj.preset === "number" && obj.preset >= 1 && obj.preset <= 5) {
     params.preset = Math.round(obj.preset);
     applied++;
   }
-  if (obj.layout === "reveal" || obj.layout === "none" || obj.layout === "row" || obj.layout === "side" || obj.layout === "full") {
+  if (obj.layout === "reveal" || obj.layout === "none" || obj.layout === "row" || obj.layout === "side" || obj.layout === "full" || obj.layout === "page") {
     params.layout = obj.layout;
     applied++;
   }
@@ -2288,7 +2429,7 @@ function applySettings(str: string): boolean {
   }
   for (const k of ["title", "day", "timeStart", "timeEnd", "artist", "stage", "artist2", ...INFO_KEYS] as const) {
     if (typeof obj[k] === "string") {
-      params[k] = (obj[k] as string).slice(0, 200);
+      params[k] = (obj[k] as string).slice(0, isInfoKey(k) ? 2000 : 200); // the info blocks hold paragraphs
       applied++;
     }
   }
@@ -2453,6 +2594,7 @@ function syncUI() {
   syncLayoutUI();
   syncVisibility();
   syncInfoSizes();
+  syncBg();
   artist2El.value = params.artist2;
   for (const key of INFO_KEYS) {
     infoEls[key].value = params[key];
@@ -2678,6 +2820,13 @@ window.artistCard = {
 
 /** The bundled default photo; a loaded, pasted or dropped image replaces it. */
 function loadPhotoUrl(url: string) {
+  if (!url) {
+    loadGen++;
+    clearVideo();
+    imageFile = null;
+    setImage(null);
+    return;
+  }
   const gen = ++loadGen;
   const img = new Image();
   img.onload = () => {

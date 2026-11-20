@@ -163,7 +163,7 @@ async function build(spec) {
 
   const block = (b) => {
     const f = figma.createFrame();
-    f.name = b.text;
+    f.name = b.text.replace(/\s+/g, " ").slice(0, 60);
     f.fills = [{ type: "SOLID", color: bgFill }];
     f.clipsContent = false;
     f.layoutMode = "HORIZONTAL";
@@ -194,10 +194,12 @@ async function build(spec) {
     const t = figma.createText();
     t.fontName = font;
     t.fontSize = b.fs;
-    t.characters = b.text;
+    // a paragraph comes with its lines already broken: centred, on the tool's leading
+    t.characters = b.lines ? b.lines.join("\n") : b.text;
     t.fills = [{ type: "SOLID", color: textFill }];
     t.letterSpacing = { unit: "PERCENT", value: b.tracking * 100 };
-    t.lineHeight = { unit: "PIXELS", value: b.fs };
+    t.lineHeight = { unit: "PIXELS", value: b.lines && b.lineH ? b.lineH : b.fs };
+    if (b.lines) t.textAlignHorizontal = "CENTER";
     t.textAutoResize = "WIDTH_AND_HEIGHT";
     try {
       t.leadingTrim = "CAP_HEIGHT"; // the block holds cap height + padding, as in the tool
