@@ -1,5 +1,5 @@
 import { Output, Mp4OutputFormat, BufferTarget, EncodedVideoPacketSource, EncodedAudioPacketSource, EncodedPacket } from "mediabunny";
-import { render, type ImageSource, type Params, type Scene } from "./engine";
+import { render, type ImageSource, type Params, type Scene, FORMATS } from "./engine";
 import type { AudioPackets } from "./audio";
 
 export function downloadBlob(blob: Blob, filename: string) {
@@ -24,8 +24,11 @@ function slug(s: string): string {
 export function fileStem(p: Params, scale: number): string {
   const parts = [slug(p.artist), slug(p.day)].filter(Boolean);
   const name = parts.length ? parts.join("-") : "artist-card";
-  return `${name}-${p.format.replace(":", "x")}@${scale}x`;
+  const [w, h] = FORMATS[p.format];
+  return `${name}-${w * scale}x${h * scale}`;
 }
+/** Before a frame is drawn: a video background seeks to the frame's time. */
+export type BeforeFrame = (t: number) => Promise<void>;
 
 export async function fontsReady(p: Params) {
   try {
@@ -42,6 +45,7 @@ export async function exportPng(
   t: number,
   scale: number,
   image: ImageSource | null,
+  beforeFrame?: BeforeFrame,
 ) {
   await fontsReady(p);
   const c = document.createElement("canvas");
@@ -49,7 +53,8 @@ export async function exportPng(
   c.height = scene.H * scale;
   const ctx = c.getContext("2d");
   if (!ctx) return;
-  render(ctx, p, scene, t, scale, image);
+  if (beforeFrame) await beforeFrame(t);
+  render(ctx, p, scene, t, scale, image); // transparent where there is no photo
   const blob = await new Promise<Blob | null>((res) => c.toBlob(res, "image/png"));
   if (blob) downloadBlob(blob, `${fileStem(p, scale)}-${t.toFixed(2)}s.png`);
 }
@@ -122,6 +127,7 @@ async function encodeLoop(
   canvas: HTMLCanvasElement,
   onProgress: (fraction: number) => void,
   audio: AudioPackets | null,
+  beforeFrame?: BeforeFrame,
 ): Promise<ArrayBuffer> {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("No 2D context");
@@ -174,7 +180,9 @@ async function encodeLoop(
     encoder.configure(config);
     for (let i = 0; i < totalFrames; i++) {
       if (encoderError) throw encoderError;
-      render(ctx, p, scene, (i / fps) % scene.tl.total, scale, image);
+      const t = (i / fps) % scene.tl.total;
+      if (beforeFrame) await beforeFrame(i / fps);
+      render(ctx, p, scene, t, scale, image, { background: "#ffffff" }); // H.264 has no alpha
       const frame = new VideoFrame(canvas, {
         timestamp: Math.round((i * 1_000_000) / fps),
         duration: Math.round(1_000_000 / fps),
@@ -217,6 +225,7 @@ export async function exportMp4(
   image: ImageSource | null,
   onProgress: (fraction: number) => void,
   audio: AudioPackets | null = null,
+  beforeFrame?: BeforeFrame,
 ) {
   await fontsReady(p);
   const outW = Math.max(16, Math.floor((scene.W * scale) / 2) * 2);
@@ -228,7 +237,7 @@ export async function exportMp4(
   for (const config of encoderConfigs(outW, outH, fps)) {
     if (!(await configSupported(config))) continue;
     try {
-      const buffer = await encodeLoop(config, p, scene, scale, fps, image, c, onProgress, audio);
+      const buffer = await encodeLoop(config, p, scene, scale, fps, image, c, onProgress, audio, beforeFrame);
       downloadBlob(new Blob([buffer], { type: "video/mp4" }), `${fileStem(p, scale)}.mp4`);
       return;
     } catch (e) {

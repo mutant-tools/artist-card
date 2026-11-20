@@ -7,6 +7,7 @@ import {
   LABEL_GAP,
   LABEL_WEIGHT,
   getLogoImages,
+  labelColors,
   logoRect,
   colorwayIndex,
   DEFAULT_PARAMS,
@@ -20,8 +21,12 @@ import {
   type ImageSource,
   type Layout,
   type LayoutKind,
+  type BlockColor,
   type LogoColor,
   type LogoPos,
+  type LogoStyle,
+  LOGO_STYLES,
+  contrastText,
   type Params,
   type Scene,
   type SpecRow,
@@ -29,14 +34,15 @@ import {
   type StackKey,
   type StaggerOrder,
 } from "./engine";
-import { exportMp4, exportPng, fontsReady, supportsVideoExport } from "./export";
+import { exportMp4, exportPng, fontsReady, supportsVideoExport, type BeforeFrame } from "./export";
 import { loadLogo } from "./logo";
 import { buildIdmlZip } from "./indesign";
+import { buildIllustratorSvg } from "./illustrator";
 import { audioPackets, loadAudioFile, playAudio, stopAudio, windowPeaks, type AudioTrack } from "./audio";
 
 const FPS = 60; // frame counter, arrow-key stepping and MP4 export
 const TICKS_PER_SECOND = 15; // timeline tick pitch
-const EXPORT_SCALE = 2; // 2160 wide
+const EXPORT_SCALE = 1; // 1080 wide: 1080x1080, 1080x1350, 1080x1920
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -169,8 +175,10 @@ function rebuild() {
   scene = buildScene(params);
   if (time > exportLength()) time = 0;
   buildTicks();
+  markKeyframes();
   syncTime();
   if (audio) setAudioStart(audioStart);
+  if (video) setVideoStart(videoStart);
   schedule();
 }
 
@@ -194,6 +202,39 @@ function buildTicks() {
     tickEls.push(el);
   }
   activeTick = -1;
+  markKeyframes();
+}
+/** The times (over the whole export) where the layout's resolved state starts and ends. */
+function keyframeTimes(): number[] {
+  const kf = scene.keyframes;
+  if (!kf) return [];
+  const out: number[] = [];
+  for (let l = 0; l < Math.max(1, params.loops); l++) out.push(kf.start + l * scene.tl.total, kf.end + l * scene.tl.total);
+  return out;
+}
+/** Colour the ticks inside the resolved state, and its two ends. */
+function markKeyframes() {
+  const kf = scene.keyframes;
+  const total = exportLength();
+  const n = tickEls.length;
+  const loops = Math.max(1, params.loops);
+  tickEls.forEach((el, i) => {
+    const t = ((i + 0.5) / n) * total;
+    const tl = t % scene.tl.total;
+    const inside = !!kf && tl >= kf.start && tl <= kf.end;
+    el.classList.toggle("key", inside);
+    let edge = false;
+    if (kf) {
+      const step = total / n;
+      for (let l = 0; l < loops; l++) {
+        for (const k of [kf.start, kf.end]) {
+          const kt = k + l * scene.tl.total;
+          if (Math.abs(kt - t) <= step / 2) edge = true;
+        }
+      }
+    }
+    el.classList.toggle("edge", edge);
+  });
 }
 function syncTime() {
   const total = exportLength();
@@ -206,21 +247,31 @@ function syncTime() {
     activeTick = idx;
   }
   syncWaveHead();
+  if (video) syncFilm();
 }
-function scrubAt(clientX: number) {
+function scrubAt(clientX: number, snap = false) {
   const r = ticksEl.getBoundingClientRect();
   if (r.width <= 0) return;
-  setTime(clamp((clientX - r.left) / r.width, 0, 1) * exportLength());
+  const total = exportLength();
+  let t = clamp((clientX - r.left) / r.width, 0, 1) * total;
+  if (snap) {
+    // Shift: snap to the nearest keyframe within 12 px
+    const reach = (12 / r.width) * total;
+    let best: number | null = null;
+    for (const k of keyframeTimes()) if (Math.abs(k - t) <= reach && (best === null || Math.abs(k - t) < Math.abs(best - t))) best = k;
+    if (best !== null) t = best;
+  }
+  setTime(t);
 }
 let scrubbing = false;
 ticksEl.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   scrubbing = true;
   ticksEl.setPointerCapture(e.pointerId);
-  scrubAt(e.clientX);
+  scrubAt(e.clientX, e.shiftKey);
 });
 ticksEl.addEventListener("pointermove", (e) => {
-  if (scrubbing) scrubAt(e.clientX);
+  if (scrubbing) scrubAt(e.clientX, e.shiftKey);
 });
 for (const ev of ["pointerup", "pointercancel"]) ticksEl.addEventListener(ev, () => (scrubbing = false));
 
@@ -229,10 +280,12 @@ new ResizeObserver(() => {
   const w = canvas.getBoundingClientRect().width;
   timelineEl.style.width = `${w}px`;
   waveEl.style.width = `${w}px`;
+  filmEl.style.width = `${w}px`;
   ticksWidth = Math.max(0, w - 50); // frame counter 40 + gap 10
   buildTicks();
   syncTime();
   buildWave();
+  if (video) syncFilm();
 }).observe(canvas);
 
 // ---------- playback ----------
@@ -253,6 +306,7 @@ function tick(now: number) {
     if (audio) playAudio(audio, audioStart + time);
   }
   syncTime();
+  if (video) syncVideo();
   draw();
   requestAnimationFrame(tick);
 }
@@ -265,9 +319,11 @@ function setPlaying(p: boolean) {
     playOffset = time;
     playLoops = 0;
     if (audio) playAudio(audio, audioStart + time);
+    if (video) syncVideo();
     requestAnimationFrame(tick);
   } else {
     stopAudio();
+    if (video) syncVideo();
     schedule();
   }
 }
@@ -275,6 +331,7 @@ function setTime(t: number) {
   if (playing) setPlaying(false);
   time = clamp(t, 0, exportLength());
   syncTime();
+  syncVideo();
   schedule();
 }
 frameBtn.addEventListener("click", () => setPlaying(!playing));
@@ -414,14 +471,14 @@ function applyPreset(n: number) {
   rebuild();
   loadPhotoUrl(presetPhoto(n));
 }
-const logoRow = $<HTMLDivElement>("logoRow");
 const logoColorSeg = $<HTMLDivElement>("logoColorSeg");
+const logoStyleRow = $<HTMLDivElement>("logoStyleRow");
 function syncLayoutUI() {
-  const reveal = params.layout === "reveal";
-  logoRow.hidden = reveal;
   logoColorSeg.hidden = params.logo === "off";
+  logoStyleRow.hidden = params.logo === "off";
   setLogoUI(params.logo);
   setLogoColorUI(params.logoColor);
+  setLogoStyleUI(params.logoStyle);
 }
 const setPresetUI = bindSeg<string>("layoutSeg", "preset", (v) => applyPreset(Number(v)));
 const setLogoUI = bindSeg<LogoPos>("logoSeg", "logo", (v) => {
@@ -439,6 +496,10 @@ function exportLength(): number {
 }
 const setLogoColorUI = bindSeg<LogoColor>("logoColorSeg", "logocolor", (v) => {
   params.logoColor = v;
+  schedule();
+});
+const setLogoStyleUI = bindSeg<LogoStyle>("logoStyleSeg", "logostyle", (v) => {
+  params.logoStyle = v;
   schedule();
 });
 function applyFormat() {
@@ -709,7 +770,7 @@ $<HTMLButtonElement>("artist2RemoveBtn").addEventListener("click", () => {
 });
 // text changes can change the block count, which sets the loop length
 for (const el of [titleEl, dayEl, timeStartEl, timeEndEl, artistEl, stageTextEl, artist2El, infoEl]) el.addEventListener("input", () => rebuild());
-for (const el of [titleEl, infoEl]) el.addEventListener("input", () => autosize(el));
+for (const el of [titleEl, infoEl, artistEl, artist2El]) el.addEventListener("input", () => autosize(el));
 document.fonts.addEventListener("loadingdone", () => schedule());
 
 // ---------- colours ----------
@@ -738,6 +799,7 @@ function setColor(key: keyof Colors, hex: string) {
     sw.title = hex;
   }
   syncColorway();
+  syncBlockRow();
   schedule();
 }
 function closePicker() {
@@ -810,7 +872,25 @@ function buildColorRow() {
     swatches[key] = sw;
     sw.style.background = params.colors[key];
     sw.title = params.colors[key];
-    sw.addEventListener("click", () => openPicker(sw, key));
+    // a click copies the hex, a double click opens the picker
+    let clickTimer = 0;
+    sw.addEventListener("click", () => {
+      window.clearTimeout(clickTimer);
+      clickTimer = window.setTimeout(() => {
+        const hex = params.colors[key];
+        navigator.clipboard.writeText(hex).then(
+          () => {
+            sw.title = `${hex} copied`;
+            setTimeout(() => (sw.title = params.colors[key]), 1200);
+          },
+          () => openPicker(sw, key),
+        );
+      }, 220);
+    });
+    sw.addEventListener("dblclick", () => {
+      window.clearTimeout(clickTimer);
+      openPicker(sw, key);
+    });
     sw.addEventListener("pointerenter", () => (hoveredSwatch = key));
     sw.addEventListener("pointerleave", () => {
       if (hoveredSwatch === key) hoveredSwatch = null;
@@ -836,7 +916,36 @@ function buildColorRow() {
     }
   });
   host.appendChild(row);
+  // the text blocks' colour: the design's yellow or one of the four
+  const brow = document.createElement("div");
+  brow.className = "row field blockrow";
+  brow.innerHTML = `<span class="lbl">Blocks</span><div class="seg" id="blockSeg" title="The colour behind the words; the text turns black or white, whichever reads better">
+      <button type="button" class="btn" data-block="">Yellow</button>
+      ${swatchKeys.map((k) => `<button type="button" class="btn swatchbtn" data-block="${k}" title="${k}"></button>`).join("")}
+    </div>`;
+  host.appendChild(brow);
+  for (const b of brow.querySelectorAll<HTMLButtonElement>("[data-block]")) {
+    b.addEventListener("click", () => {
+      params.blockColor = b.dataset.block as BlockColor;
+      syncBlockRow();
+      schedule();
+    });
+  }
   syncColorway();
+  syncBlockRow();
+}
+function syncBlockRow() {
+  for (const b of document.querySelectorAll<HTMLButtonElement>("#blockSeg [data-block]")) {
+    const key = b.dataset.block as BlockColor;
+    b.classList.toggle("active", key === params.blockColor);
+    if (key) {
+      const hex = params.colors[key];
+      b.style.background = hex;
+      b.style.color = contrastText(hex);
+      b.textContent = key === params.blockColor ? "T" : "";
+      b.title = hex;
+    }
+  }
 }
 buildColorRow();
 
@@ -857,10 +966,10 @@ document.addEventListener(
     }
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-    const file = Array.from(data.files ?? []).find((f) => f.type.startsWith("image/"));
+    const file = Array.from(data.files ?? []).find((f) => f.type.startsWith("image/") || f.type.startsWith("video/"));
     if (file) {
       e.preventDefault();
-      loadImageFile(file);
+      loadMediaFile(file);
     }
   },
   true,
@@ -876,8 +985,17 @@ function setImage(next: ImageSource | null) {
   imageRemoveBtn.disabled = !next;
   schedule();
 }
+let imageFile: Blob | null = null; // the photo as loaded, for .touquet files
+/** A dropped, pasted or picked file: a photo, a video or a saved .touquet. */
+function loadMediaFile(file: File) {
+  if (/\.touquet$/i.test(file.name)) void loadTouquetFile(file);
+  else if (file.type.startsWith("video/")) void loadVideoFile(file);
+  else if (file.type.startsWith("image/")) loadImageFile(file);
+}
 function loadImageFile(file: File) {
   if (!file.type.startsWith("image/")) return;
+  clearVideo();
+  imageFile = file;
   const gen = ++loadGen;
   const url = URL.createObjectURL(file);
   const img = new Image();
@@ -898,12 +1016,14 @@ function loadImageFile(file: File) {
 $<HTMLButtonElement>("imageLoadBtn").addEventListener("click", () => fileInput.click());
 imageRemoveBtn.addEventListener("click", () => {
   loadGen++;
+  clearVideo();
+  imageFile = null;
   setImage(null);
 });
 fileInput.addEventListener("change", () => {
   const f = fileInput.files?.[0];
   fileInput.value = "";
-  if (f) loadImageFile(f);
+  if (f) loadMediaFile(f);
 });
 for (const ev of ["dragenter", "dragover"]) {
   stageEl.addEventListener(ev, (e) => {
@@ -919,7 +1039,286 @@ for (const ev of ["dragleave", "drop"]) {
 }
 stageEl.addEventListener("drop", (e) => {
   const f = (e as DragEvent).dataTransfer?.files?.[0];
-  if (f) loadImageFile(f);
+  if (f) loadMediaFile(f);
+});
+
+// ---------- video background ----------
+// An MP4 (or MOV / WebM the browser can play) behind the card instead of a
+// photo. The strip above the card shows the piece that is used, as long as
+// the export: drag it to move the start, like the music. Playback follows
+// the timeline; exports seek the video frame by frame.
+interface VideoTrack {
+  el: HTMLVideoElement;
+  file: File;
+  duration: number;
+  thumbs: HTMLCanvasElement[]; // a filmstrip over the whole video
+}
+let video: VideoTrack | null = null;
+let videoStart = 0; // s into the video where the loop starts
+const filmEl = $<HTMLDivElement>("film");
+const filmTimeEl = $<HTMLButtonElement>("filmTime");
+const filmTicksEl = $<HTMLDivElement>("filmTicks");
+const filmCanvas = $<HTMLCanvasElement>("filmCanvas");
+/** How much of the video one export uses: the export length, or the whole video if that is shorter (it then loops). */
+function videoSpan(): number {
+  return video ? Math.min(video.duration, exportLength()) : 0;
+}
+function videoTimeAt(t: number): number {
+  const span = videoSpan();
+  return span > 0 ? videoStart + (t % span) : 0;
+}
+function seekVideo(t: number): Promise<void> {
+  if (!video) return Promise.resolve();
+  const el = video.el;
+  if (Math.abs(el.currentTime - t) < 1 / 120) return Promise.resolve();
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      el.removeEventListener("seeked", finish);
+      resolve();
+    };
+    el.addEventListener("seeked", finish);
+    el.currentTime = t;
+    setTimeout(finish, 800); // a stuck seek must not freeze the tool
+  });
+}
+/** Keep the video's own clock on the timeline: seek while paused, nudge while playing. */
+function syncVideo() {
+  if (!video) return;
+  const want = videoTimeAt(time);
+  const el = video.el;
+  if (playing) {
+    if (el.paused) void el.play().catch(() => undefined);
+    if (Math.abs(el.currentTime - want) > 0.2) el.currentTime = want;
+  } else {
+    if (!el.paused) el.pause();
+    void seekVideo(want).then(() => {
+      if (!playing) draw();
+    });
+  }
+}
+const videoBeforeFrame: BeforeFrame = async (t) => {
+  if (video) await seekVideo(videoTimeAt(t));
+};
+async function loadVideoFile(file: File) {
+  const gen = ++loadGen;
+  const el = document.createElement("video");
+  el.muted = true;
+  el.playsInline = true;
+  el.preload = "auto";
+  el.loop = true;
+  const url = URL.createObjectURL(file);
+  el.src = url;
+  try {
+    await new Promise<void>((res, rej) => {
+      el.onloadedmetadata = () => res();
+      el.onerror = () => rej(new Error("video failed"));
+    });
+  } catch {
+    URL.revokeObjectURL(url);
+    if (gen === loadGen) alert("Could not play that video. Use an MP4 (H.264).");
+    return;
+  }
+  if (gen !== loadGen) return;
+  clearVideo();
+  imageFile = null;
+  video = { el, file, duration: el.duration, thumbs: [] };
+  videoStart = 0;
+  params.imageZoom = 1;
+  params.imageX = 0;
+  params.imageY = 0;
+  await seekVideo(0);
+  setImage({ source: el, width: el.videoWidth, height: el.videoHeight });
+  filmEl.hidden = false;
+  void buildFilmThumbs(video).then(() => {
+    if (video?.el === el) syncFilm();
+  });
+  syncFilm();
+  if (playing) syncVideo();
+}
+function clearVideo() {
+  if (!video) return;
+  video.el.pause();
+  URL.revokeObjectURL(video.el.src);
+  video = null;
+  filmEl.hidden = true;
+}
+/** Sixteen small frames over the whole video, for the strip. */
+async function buildFilmThumbs(v: VideoTrack) {
+  const n = 16;
+  const h = 56;
+  const w = Math.max(8, Math.round((h * v.el.videoWidth) / v.el.videoHeight));
+  for (let i = 0; i < n; i++) {
+    if (video !== v) return;
+    const t = ((i + 0.5) / n) * v.duration;
+    await seekVideo(t);
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    c.getContext("2d")!.drawImage(v.el, 0, 0, w, h);
+    v.thumbs.push(c);
+  }
+  await seekVideo(videoTimeAt(time));
+  if (!playing) draw();
+}
+function syncFilm() {
+  if (!video) return;
+  const r = filmTicksEl.getBoundingClientRect();
+  const w = Math.max(10, Math.round(r.width || ticksWidth));
+  const h = 28;
+  if (filmCanvas.width !== w * 2) {
+    filmCanvas.width = w * 2;
+    filmCanvas.height = h * 2;
+  }
+  const ctx = filmCanvas.getContext("2d")!;
+  ctx.setTransform(2, 0, 0, 2, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const span = videoSpan();
+  const n = video.thumbs.length;
+  if (n) {
+    const tw = video.thumbs[0].width * (h / video.thumbs[0].height);
+    for (let x = 0; x < w; x += tw) {
+      const t = videoStart + (x / w) * span;
+      const i = Math.min(n - 1, Math.max(0, Math.floor((t / video.duration) * n)));
+      ctx.drawImage(video.thumbs[i], x, 0, tw, h);
+    }
+  } else {
+    ctx.fillStyle = "#dadada";
+    ctx.fillRect(0, 0, w, h);
+  }
+  // the playhead
+  const total = exportLength();
+  if (total > 0) {
+    const x = Math.round(((time % total) / total) * w);
+    ctx.fillStyle = "#737373";
+    ctx.fillRect(x - 1, 0, 2, h);
+  }
+  filmTimeEl.textContent = fmtTime(videoStart);
+}
+function setVideoStart(s: number) {
+  if (!video) return;
+  videoStart = clamp(s, 0, Math.max(0, video.duration - videoSpan()));
+  syncFilm();
+  syncVideo();
+}
+let filmDrag = false;
+let filmX0 = 0;
+let filmStart0 = 0;
+filmTicksEl.addEventListener("pointerdown", (e) => {
+  if (e.button !== 0) return;
+  filmDrag = true;
+  filmX0 = e.clientX;
+  filmStart0 = videoStart;
+  filmTicksEl.setPointerCapture(e.pointerId);
+});
+filmTicksEl.addEventListener("pointermove", (e) => {
+  if (!filmDrag || !video) return;
+  const r = filmTicksEl.getBoundingClientRect();
+  if (r.width <= 0) return;
+  setVideoStart(filmStart0 - ((e.clientX - filmX0) / r.width) * videoSpan());
+});
+for (const ev of ["pointerup", "pointercancel"]) filmTicksEl.addEventListener(ev, () => (filmDrag = false));
+
+// ---------- .touquet files ----------
+// Everything in one JSON file: the settings and the photo or video and
+// the music as base64, so a card can be picked up again later or elsewhere.
+const fileNameEl = $<HTMLInputElement>("fileName");
+const touquetInput = $<HTMLInputElement>("touquetInput");
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+async function blobEntry(blob: Blob | null, name: string): Promise<{ name: string; type: string; data: string } | null> {
+  if (!blob) return null;
+  return { name, type: blob.type, data: bytesToBase64(new Uint8Array(await blob.arrayBuffer())) };
+}
+async function saveTouquet() {
+  const name = fileNameEl.value.trim() || PRESET_NAMES[params.preset] || "card";
+  let photo = imageFile;
+  if (!photo && image && !video) {
+    // a preset photo: fetch it as it is served
+    try {
+      photo = await (await fetch(presetPhoto(params.preset))).blob();
+    } catch {
+      photo = null;
+    }
+  }
+  const doc = {
+    v: 1,
+    app: "touquet-artist-card",
+    name,
+    params,
+    image: video ? null : await blobEntry(photo, "photo"),
+    video: video ? await blobEntry(video.file, video.file.name) : null,
+    videoStart,
+    audio: audio ? { name: audio.name, type: "audio/mpeg", data: bytesToBase64(new Uint8Array(audio.bytes)) } : null,
+    audioStart,
+  };
+  const blob = new Blob([JSON.stringify(doc)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${name.replace(/[/\\:]/g, "-")}.touquet`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+async function loadTouquetFile(file: File) {
+  let doc: {
+    name?: string;
+    params?: unknown;
+    image?: { name: string; type: string; data: string } | null;
+    video?: { name: string; type: string; data: string } | null;
+    videoStart?: number;
+    audio?: { name: string; type: string; data: string } | null;
+    audioStart?: number;
+  };
+  try {
+    doc = JSON.parse(await file.text());
+    if (!doc || typeof doc !== "object" || !doc.params) throw new Error("not a card");
+  } catch {
+    alert("That is not a .touquet file.");
+    return;
+  }
+  fileNameEl.value = doc.name || file.name.replace(/\.touquet$/i, "");
+  applySettings(JSON.stringify(doc.params));
+  applyFormat();
+  rebuild();
+  if (doc.video) {
+    await loadVideoFile(new File([base64ToBytes(doc.video.data) as BlobPart], doc.video.name, { type: doc.video.type }));
+    setVideoStart(doc.videoStart ?? 0);
+  } else if (doc.image) {
+    loadImageFile(new File([base64ToBytes(doc.image.data) as BlobPart], doc.image.name, { type: doc.image.type }));
+  } else {
+    loadGen++;
+    clearVideo();
+    imageFile = null;
+    setImage(null);
+  }
+  if (doc.audio) {
+    await loadAudio(new File([base64ToBytes(doc.audio.data) as BlobPart], doc.audio.name, { type: doc.audio.type }));
+    setAudioStart(doc.audioStart ?? 0);
+  } else {
+    stopAudio();
+    audio = null;
+    waveEl.hidden = true;
+    audioRemoveBtn.disabled = true;
+  }
+  syncUI();
+}
+$<HTMLButtonElement>("saveBtn").addEventListener("click", () => void saveTouquet().catch((e) => alert(`Could not save: ${e}`)));
+$<HTMLButtonElement>("loadBtn").addEventListener("click", () => touquetInput.click());
+touquetInput.addEventListener("change", () => {
+  const f = touquetInput.files?.[0];
+  touquetInput.value = "";
+  if (f) void loadTouquetFile(f);
 });
 
 // ---------- on-canvas interaction ----------
@@ -1408,8 +1807,16 @@ function applySettings(str: string): boolean {
     params.layout = obj.layout;
     applied++;
   }
+  if (typeof obj.logoStyle === "string" && (LOGO_STYLES as string[]).includes(obj.logoStyle)) {
+    params.logoStyle = obj.logoStyle as LogoStyle;
+    applied++;
+  }
+  if (obj.blockColor === "" || obj.blockColor === "topA" || obj.blockColor === "topB" || obj.blockColor === "bottomA" || obj.blockColor === "bottomB") {
+    params.blockColor = obj.blockColor;
+    applied++;
+  }
   if (obj.logo === "off" || obj.logo === "top" || obj.logo === "bottom") {
-    params.logo = params.layout === "reveal" ? "off" : obj.logo;
+    params.logo = obj.logo;
     applied++;
   }
   if (obj.logoColor === "black" || obj.logoColor === "white") {
@@ -1512,7 +1919,7 @@ async function figmaSpec() {
   const shapes: SpecShape[] = [];
   const lay = render(probe.getContext("2d")!, snap.p, snap.scene, t, 1, snap.image, { spec: rows, shapes });
   const lr = logoRect(snap.p, snap.scene, 1);
-  const logoImages = getLogoImages();
+  const logoImages = getLogoImages(snap.p);
   const logo = lr && logoImages ? { svg: logoImages.svg, color: snap.p.logoColor, x: lr.x, y: lr.y, w: lr.w, h: lr.h } : null;
   const name = PRESET_NAMES[snap.p.preset] ?? "Artist card";
   return {
@@ -1522,7 +1929,7 @@ async function figmaSpec() {
     h: snap.scene.H,
     gap: LABEL_GAP * snap.scene.S,
     font: { family: snap.p.fontFamily || "Avantt", style: "Bold" },
-    colors: { bg: snap.p.colors.labelBg, text: snap.p.colors.labelText },
+    colors: labelColors(snap.p),
     stack: lay.stackRect ? { anchor: snap.p.stackAnchor, top: lay.stackRect.y, bottom: lay.stackRect.y + lay.stackRect.h } : null,
     rows,
     shapes,
@@ -1572,6 +1979,27 @@ indesignBtn.addEventListener("click", async () => {
   }
 });
 
+// ---------- Illustrator ----------
+const illustratorBtn = $<HTMLButtonElement>("illustratorBtn");
+illustratorBtn.addEventListener("click", async () => {
+  illustratorBtn.disabled = true;
+  try {
+    const spec = await figmaSpec();
+    const { svg, name } = buildIllustratorSvg(spec);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    flash(illustratorBtn, "Exported");
+  } catch (err) {
+    console.error("[illustrator]", err);
+    alert("Could not build the Illustrator file; check the console.");
+  } finally {
+    illustratorBtn.disabled = false;
+  }
+});
+
 figmaBtn.addEventListener("click", async () => {
   figmaBtn.disabled = true;
   try {
@@ -1611,6 +2039,9 @@ function syncUI() {
   for (const def of stepDefs) syncStep(def.key);
   titleEl.value = params.title;
   autosize(titleEl);
+  autosize(artistEl);
+  autosize(artist2El);
+  syncBlockRow();
   dayEl.value = params.day;
   timeStartEl.value = params.timeStart;
   timeEndEl.value = params.timeEnd;
@@ -1629,7 +2060,7 @@ exportPngBtn.addEventListener("click", async () => {
   const snap = snapshot();
   exportPngBtn.disabled = true;
   try {
-    await exportPng(snap.p, snap.scene, time % snap.scene.tl.total, EXPORT_SCALE, snap.image);
+    await exportPng(snap.p, snap.scene, time % snap.scene.tl.total, EXPORT_SCALE, snap.image, video ? videoBeforeFrame : undefined);
   } catch (err) {
     console.error("[export]", err);
     alert("PNG export failed; check the console.");
@@ -1660,6 +2091,7 @@ exportMp4Btn.addEventListener("click", async () => {
         exportMp4Btn.textContent = `Encoding ${Math.round(f * 100)}%`;
       },
       packets,
+      video ? videoBeforeFrame : undefined,
     );
   } catch (err) {
     console.error("[export]", err);
@@ -1683,6 +2115,7 @@ declare global {
       params: Params;
       figmaSpec: () => Promise<unknown>;
       indesignZip: () => Promise<{ bytes: Uint8Array; name: string }>;
+      illustratorSvg: () => Promise<{ svg: string; name: string }>;
       setTime: (t: number) => void;
       apply: (json: string) => boolean;
       loadImageUrl: (url: string) => Promise<void>;
@@ -1696,6 +2129,7 @@ window.artistCard = {
   params,
   figmaSpec,
   indesignZip: async () => buildIdmlZip(await figmaSpec()),
+  illustratorSvg: async () => buildIllustratorSvg(await figmaSpec()),
   setTime: (t: number) => {
     setTime(t);
     draw();
@@ -1734,7 +2168,11 @@ function loadPhotoUrl(url: string) {
 
 applyFormat();
 setImage(null);
-void loadLogo(`${import.meta.env.BASE_URL}logo.svg`).then(() => schedule());
+void Promise.all([
+  loadLogo("basic", `${import.meta.env.BASE_URL}logo-basic.svg`),
+  loadLogo("10years", `${import.meta.env.BASE_URL}logo-10years.svg`),
+  loadLogo("full", `${import.meta.env.BASE_URL}logo-full.svg`),
+]).then(() => schedule());
 syncUI();
 if (!readHash()) rebuild();
 // the photo that belongs to the preset in the link (the default one for the reveal)

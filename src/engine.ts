@@ -20,6 +20,28 @@ export type StackKey = "title" | "day" | "time" | "artist" | "stage" | "info";
 export const STACK_KEYS: StackKey[] = ["title", "day", "time", "artist", "stage", "info"];
 export type LogoPos = "off" | "top" | "bottom";
 export type LogoColor = "black" | "white";
+export type LogoStyle = "basic" | "10years" | "full";
+const wordsOf = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
+export const LOGO_STYLES: LogoStyle[] = ["basic", "10years", "full"];
+export type BlockColor = "" | "topA" | "topB" | "bottomA" | "bottomB";
+/** The text blocks' colours: the design's yellow and black, or one of the strip colours with whichever of black / white reads better on it. */
+export function labelColors(p: Params): { bg: string; text: string } {
+  if (!p.blockColor) return { bg: p.colors.labelBg, text: p.colors.labelText };
+  const bg = p.colors[p.blockColor];
+  return { bg, text: contrastText(bg) };
+}
+/** Black or white, whichever has the higher WCAG contrast against the colour. */
+export function contrastText(hex: string): string {
+  const n = parseInt(hex.replace("#", ""), 16);
+  const ch = (v: number) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  };
+  const L = 0.2126 * ch((n >> 16) & 255) + 0.7152 * ch((n >> 8) & 255) + 0.0722 * ch(n & 255);
+  const onBlack = (L + 0.05) / 0.05;
+  const onWhite = 1.05 / (L + 0.05);
+  return onBlack >= onWhite ? "#000000" : "#FFFFFF";
+}
 
 export interface Colors {
   topA: string;
@@ -79,6 +101,8 @@ export interface Params {
   preset: number; // the example last applied (1..4); 2..4 bring their own photo
   logo: LogoPos;
   logoColor: LogoColor;
+  logoStyle: LogoStyle; // which Touquet lockup
+  blockColor: BlockColor; // the text blocks' fill: the design's yellow or one of the four strip colours
   loops: number; // how many loops the MP4 export holds (1, 2 or 4), for longer music
   unitPx: number; // the stripe unit in px at 1080 (45 in the reveal, 24 for the side blocks)
   stripPx: number; // block row: height of one strip row in px at 1080
@@ -151,6 +175,8 @@ export const DEFAULT_PARAMS: Params = {
   preset: 1,
   logo: "off",
   logoColor: "black",
+  logoStyle: "basic",
+  blockColor: "",
   loops: 1,
   unitPx: 45,
   stripPx: 36,
@@ -241,7 +267,6 @@ export const COLORWAYS: Colorway[] = [
 
 /** Number of label blocks a one-stage layout shows (stack and free blocks). */
 export function stackBlockCount(p: Params): number {
-  const wordsOf = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
   let n = 0;
   for (const key of STACK_KEYS) {
     if (key === "title") n += wordsOf(p.title);
@@ -393,6 +418,7 @@ export interface Scene {
   artist: LabelClock; // times + artist + stage on the open card (clock = time shown)
   ease: (x: number) => number;
   labelEase: (x: number) => number;
+  keyframes: { start: number; end: number } | null; // the resolved state: everything in, nothing leaving yet (reveal only)
 }
 
 const clampInt = (v: number, lo: number, hi: number) =>
@@ -588,7 +614,6 @@ export function buildScene(p: Params): Scene {
   // last seam block has landed. The artist group starts a beat after the
   // bottom row and closes with it.
   const ease = bezierEase(p.easing);
-  const wordsOf = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
   const bottomRow = rows[n - 1];
   const bottomDelay = p.stagger * bottomRow.rank;
   const bottomCloseDelay = span - bottomDelay;
@@ -787,7 +812,16 @@ function finishScene(
     }
   }
 
-  return { W, H, S, unit, rows, tl, layout, seam, artist, ease, labelEase: bezierEase(LABEL_EASING) };
+  let keyframes: Scene["keyframes"] = null;
+  if (layout === "reveal") {
+    // the artist group is fully in once its last block has slid in; the
+    // state holds until the first row or label starts leaving
+    const artistBlocks = (timeLabel(p) ? 1 : 0) + wordsOf(p.artist) + (p.artist.trim() && p.artist2.trim() ? 1 + wordsOf(p.artist2) : 0) + wordsOf(p.stage);
+    const start = Math.max(tl.tOpenEnd, artist.openAt + (Math.max(1, artistBlocks) - 1) * artist.openStagger + artist.openD);
+    const end = Math.min(tl.tClose, artist.closeAt);
+    if (end > start) keyframes = { start, end };
+  }
+  return { W, H, S, unit, rows, tl, layout, seam, artist, ease, labelEase: bezierEase(LABEL_EASING), keyframes };
 }
 
 /**
@@ -931,6 +965,7 @@ export interface SpecShape {
   fill: string;
 }
 export interface RenderOptions {
+  background?: string; // fill behind everything (exports to formats without alpha); none: transparent where no photo is
   labels?: boolean; // false: everything but the text blocks
   strips?: boolean; // false: no stripe rows or floaters (the photo alone)
   logo?: boolean; // false: no logo
@@ -938,6 +973,7 @@ export interface RenderOptions {
   shapes?: SpecShape[]; // collects every stripe rectangle drawn
 }
 let labelsOn = true;
+let backgroundFill: string | null = null;
 let stripsOn = true;
 let logoOn = true;
 let specSink: SpecRow[] | null = null;
@@ -1229,6 +1265,22 @@ function b2bRow(ctx: CanvasRenderingContext2D, p: Params, S: number, gap: number
   return rowOf([badge, ...nameRow.blocks], gap, -(badge.w + gap) / 2);
 }
 
+/** The artist's rows: every line of the name (Enter in the field), then the second artist with the B2B badge on its first line. */
+function artistRows(ctx: CanvasRenderingContext2D, p: Params, S: number, gap: number, maxW: number, family: string): LabelRow[] {
+  const lines = (text: string) => text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+  const rows: LabelRow[] = [];
+  for (const line of lines(p.artist)) rows.push(...wrapRows(ctx, words(line, false), STYLE_BIG, S, gap, maxW, family));
+  if (rows.length) {
+    const l2 = lines(p.artist2);
+    if (l2.length) {
+      const first = b2bRow(ctx, { ...p, artist2: l2[0] }, S, gap, maxW, family);
+      if (first) rows.push(first);
+      for (const line of l2.slice(1)) rows.push(...wrapRows(ctx, words(line, false), STYLE_BIG, S, gap, maxW, family));
+    }
+  }
+  return rows;
+}
+
 // ---------- logo ----------
 
 export interface LogoImages {
@@ -1239,25 +1291,37 @@ export interface LogoImages {
   h: number;
   inkTop: number; // fraction of h above the first ink
   inkBottom: number; // fraction of h at the last ink
+  inkLeft: number; // fraction of w before the first ink
+  inkRight: number; // fraction of w at the last ink
 }
-let logoImages: LogoImages | null = null;
+const LOGO_INK_WIDTH = 0.905; // the wordmark's ink spans this much of the short side (the original logo.svg at full width)
+let logoSet: Partial<Record<LogoStyle, LogoImages>> = {};
+let logoImages: LogoImages | null = null; // the style in use, set by render / logoRect
 /** The logo artwork is loaded by the app (it is not part of the engine). */
-export function setLogoImages(images: LogoImages | null) {
-  logoImages = images;
+export function setLogoImages(style: LogoStyle, images: LogoImages | null) {
+  if (images) logoSet[style] = images;
+  else delete logoSet[style];
 }
-export function getLogoImages(): LogoImages | null {
-  return logoImages;
+/** The lockup a card uses (falls back to any loaded one). */
+export function getLogoImages(p?: Params): LogoImages | null {
+  const style = p?.logoStyle ?? "basic";
+  return logoSet[style] ?? logoSet.basic ?? Object.values(logoSet)[0] ?? null;
 }
 /** Where the logo sits at the render scale: the short side wide, centred, with equal margins top or bottom. */
 export function logoRect(p: Params, scene: Scene, scale: number): Rect | null {
-  if (!logoImages || p.logo === "off" || p.layout === "reveal") return null;
+  logoImages = getLogoImages(p);
+  if (!logoImages || p.logo === "off") return null;
   const W = scene.W * scale;
   const H = scene.H * scale;
   const S = scene.S * scale;
-  const w = S;
-  const h = (S * logoImages.h) / logoImages.w;
+  // the ink is LOGO_INK_WIDTH of the short side wide, whatever the file's own margins
+  const inkW = Math.max(0.01, logoImages.inkRight - logoImages.inkLeft);
+  const w = (S * LOGO_INK_WIDTH) / inkW;
+  const h = (w * logoImages.h) / logoImages.w;
   const x = (W - w) / 2;
-  const y = p.logo === "top" ? 0 : H - logoImages.inkTop * h - logoImages.inkBottom * h;
+  // the same margin top or bottom as the original: the ink's own top margin mirrors below
+  const margin = (logoImages.inkTop * h * 1080) / 1080;
+  const y = p.logo === "top" ? margin - logoImages.inkTop * h : H - margin - logoImages.inkBottom * h;
   return { x, y, w, h };
 }
 
@@ -1276,6 +1340,7 @@ export function render(
   opts?: RenderOptions,
 ): Layout {
   labelsOn = opts?.labels !== false;
+  backgroundFill = opts?.background ?? null;
   stripsOn = opts?.strips !== false;
   logoOn = opts?.logo !== false;
   specSink = opts?.spec ?? null;
@@ -1284,6 +1349,7 @@ export function render(
     return renderInner(ctx, p, scene, t, scale, image);
   } finally {
     labelsOn = true;
+    backgroundFill = null;
     stripsOn = true;
     logoOn = true;
     specSink = null;
@@ -1299,8 +1365,11 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
   const cx = W / 2;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, W, H);
+  ctx.clearRect(0, 0, W, H);
+  if (backgroundFill) {
+    ctx.fillStyle = backgroundFill;
+    ctx.fillRect(0, 0, W, H);
+  }
   if (image) {
     const c = coverRect(image, W, H, p.imageZoom, p.imageX, p.imageY);
     ctx.drawImage(image.source, c.x, c.y, c.dw, c.dh);
@@ -1358,6 +1427,8 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
   if (lr && logoImages && logoOn) ctx.drawImage(p.logoColor === "white" ? logoImages.white : logoImages.black, lr.x, lr.y, lr.w, lr.h);
 
   const fam = p.fontFamily || "Avantt";
+  const lc = labelColors(p);
+  const colors: Colors = { ...p.colors, labelBg: lc.bg, labelText: lc.text };
   const gap = LABEL_GAP * S;
   const maxW = W * 0.92;
   const slide = 0.12 * S;
@@ -1381,16 +1452,15 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
       const base = seamFirst;
       specKey = "seam";
       specStacked = false;
-      drawRow(ctx, r, cx, y, gap, (i) => 1 - blockProgress(scene, scene.seam, base + i, seamN, t), dirOf(base), slide, p.colors, fam);
+      drawRow(ctx, r, cx, y, gap, (i) => 1 - blockProgress(scene, scene.seam, base + i, seamN, t), dirOf(base), slide, colors, fam);
       seamFirst += r.blocks.length;
       y += r.h + gap;
     }
 
     const times = layoutRow(ctx, timeLabel(p) ? [timeLabel(p)] : [], STYLE_TINY, S, gap, maxW, fam);
-    const name = layoutRow(ctx, words(p.artist, false), STYLE_BIG, S, gap, maxW, fam);
-    const b2b = name ? b2bRow(ctx, p, S, gap, maxW, fam) : null;
+    const nameRows = artistRows(ctx, p, S, gap, maxW, fam);
     const stage2 = layoutRow(ctx, words(p.stage, true), STYLE_SMALL, S, gap, maxW, fam);
-    const groupRows = [times, name, b2b, stage2].filter((r): r is LabelRow => !!r);
+    const groupRows = [times, ...nameRows, stage2].filter((r): r is LabelRow => !!r);
     if (groupRows.length) {
       const gh = groupRows.reduce((a, r) => a + r.h, 0) + gap * (groupRows.length - 1);
       const gw = groupRows.reduce((a, r) => Math.max(a, r.w), 0);
@@ -1416,7 +1486,7 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
           },
           dirOf(50 + base),
           slide,
-          p.colors,
+          colors,
           fam,
         );
         first += r.blocks.length;
@@ -1440,9 +1510,7 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
     else if (key === "day") rows = wrapRows(ctx, words(p.day, true), STYLE_SMALL, S, gap, maxW, fam);
     else if (key === "time") rows = [layoutRow(ctx, timeLabel(p) ? [timeLabel(p)] : [], STYLE_TINY, S, gap, maxW, fam)].filter((r): r is LabelRow => !!r);
     else if (key === "artist") {
-      rows = wrapRows(ctx, words(p.artist, false), STYLE_BIG, S, gap, maxW, fam);
-      const b2b = rows.length ? b2bRow(ctx, p, S, gap, maxW, fam) : null;
-      if (b2b) rows.push(b2b);
+      rows = artistRows(ctx, p, S, gap, maxW, fam);
     } else if (key === "stage") rows = wrapRows(ctx, words(p.stage, hasArtist), hasArtist ? STYLE_SMALL : STYLE_BIG, S, gap, maxW, fam);
     else if (key === "info")
       rows = p.info
@@ -1467,7 +1535,7 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
     specStacked = p.free[key] === undefined;
     for (const r of rows) {
       const base = g;
-      drawRow(ctx, r, centreX, yy, gap, (i) => blockProgress(scene, scene.artist, base + i, nBlocks, t), dirOf(50 + base), slide, p.colors, fam);
+      drawRow(ctx, r, centreX, yy, gap, (i) => blockProgress(scene, scene.artist, base + i, nBlocks, t), dirOf(50 + base), slide, colors, fam);
       g += r.blocks.length;
       yy += r.h + gap;
     }

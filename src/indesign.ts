@@ -187,10 +187,37 @@ function rectGeometry(x: number, y: number, w: number, h: number): string {
 
 const ITEM_COMMON = 'Visible="true" Name="$ID/" AppliedObjectStyle="ObjectStyle/$ID/[None]" LocalDisplaySetting="Default"';
 
+/** Print bleed for a card: 3 mm as if the short side were an A4 width (210 mm), so 15 px at 1080. */
+export function bleedFor(spec: { w: number; h: number }): number {
+  return Math.round((Math.min(spec.w, spec.h) * 3) / 210);
+}
+/** Everything that touches a page edge reaches into the bleed: the photo, and the stripes on the edges. */
+export function extendToBleed(spec: { w: number; h: number; shapes: SpecShape[] }, bleed: number): SpecShape[] {
+  const W = spec.w;
+  const H = spec.h;
+  const eps = 0.5;
+  return spec.shapes.map((sh) => {
+    if (sh.floater) return sh;
+    let { x, y, w, h } = sh;
+    if (x <= eps) {
+      w += x + bleed;
+      x = -bleed;
+    }
+    if (x + w >= W - eps) w = W + bleed - x;
+    if (y <= eps) {
+      h += y + bleed;
+      y = -bleed;
+    }
+    if (y + h >= H - eps) h = H + bleed - y;
+    return { ...sh, x, y, w, h };
+  });
+}
+
 export function buildIdml(spec: IdmlSpec): { files: Record<string, Uint8Array>; stem: string } {
   idCounter = 0;
   const W = spec.w;
   const H = spec.h;
+  const bleed = bleedFor(spec);
   const ox = -W / 2; // page origin in spread coordinates
   const oy = -H / 2;
   const swatches = new Map<string, string>(); // hex -> Color self
@@ -206,16 +233,18 @@ export function buildIdml(spec: IdmlSpec): { files: Record<string, Uint8Array>; 
   const photoStem = "photo.jpg";
   const photoBytes = dataUrlBytes(spec.background);
   const imgDims = jpegSize(photoBytes) || { w: W * 2, h: H * 2 };
-  const scale = W / imgDims.w;
+  const scale = Math.max((W + 2 * bleed) / imgDims.w, (H + 2 * bleed) / imgDims.h);
   {
     const rid = nextId();
     const iid = nextId();
     const lid = nextId();
+    const dw = imgDims.w * scale;
+    const dh = imgDims.h * scale;
     items.push(
-      `<Rectangle Self="${rid}" ContentType="GraphicType" ${ITEM_COMMON} FillColor="Swatch/None" StrokeColor="Swatch/None" StrokeWeight="0" ItemTransform="1 0 0 1 ${num(ox)} ${num(oy)}">` +
-        rectGeometry(0, 0, W, H) +
+      `<Rectangle Self="${rid}" ContentType="GraphicType" ${ITEM_COMMON} FillColor="Swatch/None" StrokeColor="Swatch/None" StrokeWeight="0" ItemTransform="1 0 0 1 ${num(ox - bleed)} ${num(oy - bleed)}">` +
+        rectGeometry(0, 0, W + 2 * bleed, H + 2 * bleed) +
         `<FrameFittingOption FittingOnEmptyFrame="FillProportionally" />` +
-        `<Image Self="${iid}" Space="$ID/#Links_RGB" ActualPpi="72 72" EffectivePpi="${num(72 / scale)} ${num(72 / scale)}" ImageTypeName="$ID/JPEG" ItemTransform="${num(scale)} 0 0 ${num(scale)} 0 0" ${ITEM_COMMON}>` +
+        `<Image Self="${iid}" Space="$ID/#Links_RGB" ActualPpi="72 72" EffectivePpi="${num(72 / scale)} ${num(72 / scale)}" ImageTypeName="$ID/JPEG" ItemTransform="${num(scale)} 0 0 ${num(scale)} ${num((W + 2 * bleed - dw) / 2)} ${num((H + 2 * bleed - dh) / 2)}" ${ITEM_COMMON}>` +
         `<Properties><Profile type="string">$ID/Use Document Default</Profile><GraphicBounds Left="0" Top="0" Right="${num(imgDims.w)}" Bottom="${num(imgDims.h)}" /></Properties>` +
         `<Link Self="${lid}" AssetURL="$ID/" AssetID="$ID/" LinkResourceURI="file:Links/${photoStem}" LinkResourceFormat="$ID/JPEG" StoredState="Normal" LinkClassID="35906" LinkClientID="257" LinkResourceModified="false" LinkObjectModified="false" ShowInUI="true" CanEmbed="true" CanUnembed="true" CanPackage="true" ImportPolicy="NoAutoImport" ExportPolicy="NoAutoExport" LinkResourceSize="0~${photoBytes.length.toString(16)}" />` +
         `</Image></Rectangle>`,
@@ -225,7 +254,7 @@ export function buildIdml(spec: IdmlSpec): { files: Record<string, Uint8Array>; 
   // strips: one group per row, the floaters together
   const byRow = new Map<number, SpecShape[]>();
   const floaters: SpecShape[] = [];
-  for (const sh of spec.shapes) {
+  for (const sh of extendToBleed(spec, bleed)) {
     if (sh.floater) floaters.push(sh);
     else {
       if (!byRow.has(sh.row)) byRow.set(sh.row, []);
@@ -250,7 +279,7 @@ export function buildIdml(spec: IdmlSpec): { files: Record<string, Uint8Array>; 
     const polys: string[] = [];
     for (const m of svg.matchAll(/<path\s+([^>]*)\/>/g)) {
       const attrs = m[1];
-      const d = /\sd="([^"]*)"/.exec(attrs)?.[1];
+      const d = /(?:^|\s)d="([^"]*)"/.exec(attrs)?.[1];
       let fill = /fill="([^"]*)"/.exec(attrs)?.[1] || "black";
       if (!d || fill === "none") continue;
       if (fill === "black" && color === "white") fill = "white";
@@ -318,7 +347,14 @@ export function buildIdml(spec: IdmlSpec): { files: Record<string, Uint8Array>; 
     })
     .join("\n\t");
   const graphic = graphicTpl.replace("</idPkg:Graphic>", `\t${swatchXml}\n</idPkg:Graphic>`);
-  const prefs = prefsTpl.replace(/PageHeight="[^"]*"/, `PageHeight="${num(H)}"`).replace(/PageWidth="[^"]*"/, `PageWidth="${num(W)}"`);
+  const prefs = prefsTpl
+    .replace(/PageHeight="[^"]*"/, `PageHeight="${num(H)}"`)
+    .replace(/PageWidth="[^"]*"/, `PageWidth="${num(W)}"`)
+    .replace(/DocumentBleedTopOffset="[^"]*"/, `DocumentBleedTopOffset="${num(bleed)}"`)
+    .replace(/DocumentBleedBottomOffset="[^"]*"/, `DocumentBleedBottomOffset="${num(bleed)}"`)
+    .replace(/DocumentBleedInsideOrLeftOffset="[^"]*"/, `DocumentBleedInsideOrLeftOffset="${num(bleed)}"`)
+    .replace(/DocumentBleedOutsideOrRightOffset="[^"]*"/, `DocumentBleedOutsideOrRightOffset="${num(bleed)}"`)
+    .replace(/DocumentBleedUniformSize="[^"]*"/, `DocumentBleedUniformSize="true"`);
 
   // the designmap: the template's, with our spread and stories instead of its own
   const storyIds = Object.keys(stories);

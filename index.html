@@ -7,7 +7,8 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%277%27 fill=%27white%27/%3E%3C/svg%3E" />
   </head>
   <body>
-    <input type="file" id="fileInput" accept="image/*" hidden />
+    <input type="file" id="fileInput" accept="image/*,video/mp4,video/quicktime,video/webm,.touquet" hidden />
+    <input type="file" id="touquetInput" accept=".touquet,application/json" hidden />
     <input type="file" id="audioInput" accept="audio/mpeg,.mp3" hidden />
 
     <div id="app">
@@ -44,18 +45,18 @@
                   <input type="text" id="timeEndText" class="w45 center" spellcheck="false" />
                 </div>
               </div>
-              <div class="row field" id="artistRow">
+              <div class="row field tall" id="artistRow">
                 <span class="lbl" id="artistLbl">Artist</span>
                 <div class="with-btn">
-                  <input type="text" id="artistText" spellcheck="false" />
-                  <button type="button" class="btn w20" id="artist2AddBtn" title="Add a second artist (B2B)">+</button>
+                  <textarea id="artistText" rows="1" spellcheck="false" title="Enter puts the rest of the name on a new row of blocks"></textarea>
+                  <button type="button" class="btn w20 tall" id="artist2AddBtn" title="Add a second artist (B2B)">+</button>
                 </div>
               </div>
-              <div class="row field" id="artist2Row" hidden>
+              <div class="row field tall" id="artist2Row" hidden>
                 <span class="lbl">Artist 2</span>
                 <div class="with-btn">
-                  <input type="text" id="artist2Text" spellcheck="false" />
-                  <button type="button" class="btn w20" id="artist2RemoveBtn" title="Remove the second artist">&ndash;</button>
+                  <textarea id="artist2Text" rows="1" spellcheck="false" title="Enter puts the rest of the name on a new row of blocks"></textarea>
+                  <button type="button" class="btn w20 tall" id="artist2RemoveBtn" title="Remove the second artist">&ndash;</button>
                 </div>
               </div>
               <label class="row field" id="stageRow"><span class="lbl">Stage</span><input type="text" id="stageText" spellcheck="false" /></label>
@@ -69,7 +70,7 @@
               <div class="row field">
                 <span class="lbl">Image</span>
                 <div class="seg">
-                  <button type="button" class="btn" id="imageLoadBtn" title="Or drop an image on the preview">Load</button>
+                  <button type="button" class="btn" id="imageLoadBtn" title="A photo or an MP4; or drop one on the preview. A video is cropped with the strip above the card">Load</button>
                   <button type="button" class="btn" id="imageRemoveBtn" disabled>Remove</button>
                 </div>
               </div>
@@ -80,7 +81,7 @@
                   <button type="button" class="btn" id="audioRemoveBtn" disabled>Remove</button>
                 </div>
               </div>
-              <div class="row field" id="logoRow" hidden>
+              <div class="row field" id="logoRow">
                 <span class="lbl">Logo</span>
                 <div class="seg" id="logoSeg">
                   <button type="button" class="btn active" data-logo="off">Off</button>
@@ -90,6 +91,14 @@
                 <div class="seg colour" id="logoColorSeg" hidden>
                   <button type="button" class="btn active" data-logocolor="black">Black</button>
                   <button type="button" class="btn" data-logocolor="white">White</button>
+                </div>
+              </div>
+              <div class="row field" id="logoStyleRow" hidden>
+                <span class="lbl">Lockup</span>
+                <div class="seg" id="logoStyleSeg">
+                  <button type="button" class="btn" data-logostyle="basic">Basic</button>
+                  <button type="button" class="btn" data-logostyle="10years">10 Years</button>
+                  <button type="button" class="btn" data-logostyle="full">Full</button>
                 </div>
               </div>
             </section>
@@ -117,6 +126,14 @@
 
               <section class="group" id="exportGroup">
                 <div class="row field">
+                  <span class="lbl">File</span>
+                  <div class="with-btn">
+                    <input type="text" id="fileName" spellcheck="false" placeholder="Name" title="The name of the saved .touquet file" />
+                    <button type="button" class="btn" id="saveBtn" title="Save everything, photo or video and music included, as a .touquet file">Save</button>
+                    <button type="button" class="btn" id="loadBtn" title="Open a .touquet file (or drop one on the preview)">Load</button>
+                  </div>
+                </div>
+                <div class="row field">
                   <span class="lbl">Loops</span>
                   <div class="seg" id="loopsSeg" title="How many times the loop plays in the MP4, for longer music">
                     <button type="button" class="btn active" data-loops="1">1x</button>
@@ -134,7 +151,10 @@
                 </div>
                 <div class="seg">
                   <button type="button" class="btn" id="figmaBtn">Copy for Figma</button>
-                  <button type="button" class="btn" id="indesignBtn" title="The frame shown in the preview as an InDesign file (IDML) with the photo in a Links folder; everything stays editable">Export InDesign</button>
+                </div>
+                <div class="seg">
+                  <button type="button" class="btn" id="indesignBtn" title="The frame shown in the preview as an InDesign file (IDML) with the photo in a Links folder and a bleed; everything stays editable">Export InDesign</button>
+                  <button type="button" class="btn" id="illustratorBtn" title="The frame shown in the preview as an SVG for Illustrator: photo, strips, logo vectors and editable text, with a bleed">Export Illustrator</button>
                 </div>
               </section>
             </div>
@@ -150,6 +170,10 @@
         <div class="timeline wave" id="wave" hidden>
           <button type="button" class="frame" id="waveTime" title="Where the music starts; drag the strip to move it">0:00</button>
           <div class="ticks" id="waveTicks"></div>
+        </div>
+        <div class="timeline wave film" id="film" hidden>
+          <button type="button" class="frame" id="filmTime" title="Where the video starts; drag the strip to move it">0:00</button>
+          <div class="ticks" id="filmTicks"><canvas id="filmCanvas" height="28"></canvas></div>
         </div>
         <div class="stage" id="stage">
           <canvas id="canvas" width="1080" height="1350"></canvas>
