@@ -2,11 +2,12 @@
 // Everything is computed from (params, time) so playback, scrubbing and
 // export all share one code path.
 
-export type Format = "4:5" | "9:16" | "1:1";
+export type Format = "4:5" | "9:16" | "1:1" | "16:9";
 export const FORMATS: Record<Format, [number, number]> = {
   "4:5": [1080, 1350],
   "9:16": [1080, 1920],
   "1:1": [1080, 1080],
+  "16:9": [1920, 1080],
 };
 
 export type Bezier = [number, number, number, number];
@@ -1293,6 +1294,8 @@ export interface LogoImages {
   inkBottom: number; // fraction of h at the last ink
   inkLeft: number; // fraction of w before the first ink
   inkRight: number; // fraction of w at the last ink
+  boneTop: number; // the wordmark (the tallest band of ink): fraction of h where it starts
+  boneBottom: number; // and where it ends
 }
 const LOGO_INK_WIDTH = 0.905; // the wordmark's ink spans this much of the short side (the original logo.svg at full width)
 const LOGO_MARGIN = 51.5 / 1080; // the ink's distance from the top or bottom edge, as a fraction of the short side (the original logo.svg)
@@ -1308,22 +1311,36 @@ export function getLogoImages(p?: Params): LogoImages | null {
   const style = p?.logoStyle ?? "basic";
   return logoSet[style] ?? logoSet.basic ?? Object.values(logoSet)[0] ?? null;
 }
-/** Where the logo sits at the render scale: the short side wide, centred, with equal margins top or bottom. */
+/**
+ * Where the logo sits at the render scale: the short side wide, centred, with
+ * equal margins top or bottom. The three lockups share the wordmark (the
+ * "bones"); the full lockup, the largest, is placed at the margin and the
+ * others are put where their wordmark lands on its wordmark, so switching
+ * lockups only adds or removes the parts around it.
+ */
 export function logoRect(p: Params, scene: Scene, scale: number): Rect | null {
   logoImages = getLogoImages(p);
   if (!logoImages || p.logo === "off") return null;
   const W = scene.W * scale;
   const H = scene.H * scale;
   const S = scene.S * scale;
-  // the ink is LOGO_INK_WIDTH of the short side wide, whatever the file's own margins
-  const inkW = Math.max(0.01, logoImages.inkRight - logoImages.inkLeft);
-  const w = (S * LOGO_INK_WIDTH) / inkW;
-  const h = (w * logoImages.h) / logoImages.w;
-  const x = (W - w) / 2;
-  // the ink keeps the design's margin from the edge, whatever the file's own
-  const margin = S * LOGO_MARGIN;
-  const y = p.logo === "top" ? margin - logoImages.inkTop * h : H - margin - logoImages.inkBottom * h;
-  return { x, y, w, h };
+  const ref = logoSet.full ?? logoImages;
+  const place = (img: LogoImages) => {
+    // the ink is LOGO_INK_WIDTH of the short side wide, whatever the file's own margins
+    const inkW = Math.max(0.01, img.inkRight - img.inkLeft);
+    const w = (S * LOGO_INK_WIDTH) / inkW;
+    const h = (w * img.h) / img.w;
+    // the ink keeps the design's margin from the edge, whatever the file's own
+    const margin = S * LOGO_MARGIN;
+    const y = p.logo === "top" ? margin - img.inkTop * h : H - margin - img.inkBottom * h;
+    return { w, h, y };
+  };
+  const r = place(ref);
+  const cur = place(logoImages);
+  const x = (W - cur.w) / 2;
+  // the wordmark's bottom edge stays where the reference lockup puts it
+  const y = r.y + ref.boneBottom * r.h - logoImages.boneBottom * cur.h;
+  return { x, y, w: cur.w, h: cur.h };
 }
 
 /**

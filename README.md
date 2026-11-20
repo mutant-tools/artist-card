@@ -30,9 +30,12 @@ The bundled default photo is `public/default.jpg`.
 
 ## Controls
 
-Left column:
+The preview is on the left, the settings in one column on the right (it
+scrolls when they run past the window). The sliders are rows of ticks:
+click or drag, arrow keys step, and the label shows the value while the
+pointer is over the row.
 
-- **Format** 4:5, 1:1, 9:16 (1080-based canvases). **Layout preset** the
+- **Format** 4:5, 1:1, 16:9, 9:16 (1080-based canvases). **Layout preset** the
   examples from the Figma sheet, photo included: 1 Reveal (the two-stage
   construction), 2 Infos Pratiques (side blocks, 24 px units, title at the
   top, sentence at the bottom), 3 Full blocks (the stripes held open
@@ -71,8 +74,7 @@ Left column:
 - **Text time** seconds one label block takes to come in or go (1 s in the
   design, reveal only). **Loop length** (one-stage posters) the stripes'
   motion cycle in seconds. Settings and text fields that cannot change the
-  picture in the current preset are hidden, and the two columns rebalance:
-  the artist cards (1, 3) take day, time, artist and stage, the info
+  picture in the current preset are hidden: the artist cards (1, 3) take day, time, artist and stage, the info
   posters (2, 4) a title and the sentence; a one-stage poster has no
   opening or holds, the block row has no hole, no blocks means no stripe
   settings at all.
@@ -93,8 +95,6 @@ Left column:
   left standing per row and side, more towards the outer rows; **Shape
   seed**; **Top / Bottom / Centre** stagger order (closing runs in reverse).
 
-Right column:
-
 - **Block size** the stripe unit in px at 1080 (45 in the reveal, 24 for the
   side blocks). **Block width** widest edge block left in an open row, in units (one unit
   is the card's short side / 24); the edge blocks breathe between that and
@@ -109,36 +109,40 @@ Right column:
   in them).
 - **Colours** the 67 Touquet colourways, locked sets of four (top A / B,
   bottom A / B): the arrows step through them, the box shows the current
-  number (type one to jump; `–` means custom colours). A click on a swatch
-  copies its hex, a double click opens a picker, hover it and press Cmd+V
-  to paste a hex (with or without #).
-- **Blocks** the colour behind the words: the design's yellow or one of
-  the four strip colours; the text turns black or white, whichever has the
-  better contrast on it.
+  number (type one to jump; `–` means custom colours). The fifth swatch
+  is the design's yellow. A click on any of the five makes it the colour
+  behind the words (the text turns black or white, whichever has the
+  better contrast on it); a double click opens a picker, Alt-click copies
+  the hex, hover a swatch and press Cmd+V to paste a hex (with or without
+  #).
 - **Image** a photo or a video (MP4, MOV, WebM), loaded or dropped on the
-  preview. A video plays with the timeline; the strip above the card shows
-  the piece that is used, as long as the export (a shorter video loops), and
-  dragging it moves the start, like the music. Exports take the video frame
-  by frame. **Remove** leaves the card without a background.
-- **Logo** off, top or bottom, black or white, in every layout; **Lockup**
-  the Basic, 10 Years or Full version.
+  preview. A video plays with the timeline at its own frame rate; the piece
+  used is as long as the export (a shorter video loops), and the stepper
+  that appears between Load and Remove sets where in the video it starts,
+  in seconds. Exports take the video frame by frame. **Remove** leaves the
+  card without a background.
+- **Logo** off, top or bottom, white or black, in every layout; **Lockup**
+  the Basic, 10 Years or Full version. The wordmark stays put when the
+  lockup changes: the Full one is placed at the margin and the others put
+  their wordmark on its wordmark, so only the parts around it come and go.
 - **Artist** Enter in the name fields puts the rest of the name on a new row
   of blocks (the second artist keeps the B2B badge on its first row).
 - **Loops** 1x, 2x or 4x: how many times the loop plays in the MP4, so a
   longer piece of the music fits; the timeline and the music strip cover
   that whole length.
-- **Copy / Paste settings** the whole state as JSON (values are clamped).
-  The URL hash always carries every setting that differs from the defaults
+- The URL hash always carries every setting that differs from the defaults
   (photo excepted), so the link itself restores the state.
-- **Export MP4 / PNG** at the card's size: 1080x1080, 1080x1350 or
-  1080x1920. Without a photo the PNG is transparent.
-- **Copy for Figma** the frame shown in the preview, for the Figma plugin
+- **Export MP4 / PNG** at the card's size: 1080x1080, 1080x1350,
+  1920x1080 or 1080x1920. Without a photo the PNG is transparent.
+- **Export Figma** the frame shown in the preview, for the Figma plugin
   (see Figma below).
 - **Export InDesign / Illustrator** the frame shown in the preview as an
   InDesign or Illustrator file (see below).
-- **File** name, **Save** and **Load**: everything in one `.touquet` file
-  (settings, the photo or video, the music, with their start points). A
-  `.touquet` can also be dropped on the preview.
+- **Save** and **Load**: everything in one `.touquet` file (settings, the
+  photo or video, the music, with their start points). Save opens the
+  browser's own save dialog where there is one (Chrome, Edge); elsewhere it
+  asks for a name and downloads. A `.touquet` can also be dropped on the
+  preview.
 - The timeline: in the reveal, the ticks of the resolved state (everything
   in, nothing leaving yet) are tinted and its two ends darker; Shift-drag
   on the timeline snaps to those two keyframes.
@@ -160,7 +164,7 @@ manifest, pick `figma-plugin/manifest.json`. Then either
 
 - run the plugin: it opens the live tool in its window; set the card up and
   press **Send to Figma**; or
-- press **Copy for Figma** in the tool anywhere (the site, or the code layer
+- press **Export Figma** in the tool anywhere (the site, or the code layer
   in the Touquet file), run the plugin and press **Paste from clipboard**.
 
 

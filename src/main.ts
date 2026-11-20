@@ -247,7 +247,6 @@ function syncTime() {
     activeTick = idx;
   }
   syncWaveHead();
-  if (video) syncFilm();
 }
 function scrubAt(clientX: number, snap = false) {
   const r = ticksEl.getBoundingClientRect();
@@ -280,12 +279,10 @@ new ResizeObserver(() => {
   const w = canvas.getBoundingClientRect().width;
   timelineEl.style.width = `${w}px`;
   waveEl.style.width = `${w}px`;
-  filmEl.style.width = `${w}px`;
   ticksWidth = Math.max(0, w - 50); // frame counter 40 + gap 10
   buildTicks();
   syncTime();
   buildWave();
-  if (video) syncFilm();
 }).observe(canvas);
 
 // ---------- playback ----------
@@ -471,10 +468,10 @@ function applyPreset(n: number) {
   rebuild();
   loadPhotoUrl(presetPhoto(n));
 }
-const logoColorSeg = $<HTMLDivElement>("logoColorSeg");
+const logoColorRow = $<HTMLDivElement>("logoColorRow");
 const logoStyleRow = $<HTMLDivElement>("logoStyleRow");
 function syncLayoutUI() {
-  logoColorSeg.hidden = params.logo === "off";
+  logoColorRow.hidden = params.logo === "off";
   logoStyleRow.hidden = params.logo === "off";
   setLogoUI(params.logo);
   setLogoColorUI(params.logoColor);
@@ -547,13 +544,14 @@ interface StepDef {
   suffix?: string;
   container: string;
   title?: string;
+  control?: "slider"; // a row of ticks instead of a stepper
 }
 const stepDefs: StepDef[] = [
   { key: "holdClosed", label: "Hold closed", min: 0, max: 20, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup" },
   { key: "duration", label: "Opening time", min: 0.1, max: 6, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup", title: "One row's open / close transition; the block moves follow the same easing" },
-  { key: "opening", label: "Opening %", min: 0, max: 100, step: 5, decimals: 0, container: "timingGroup", title: "How far the rows open; the edge blocks stay on top of that" },
-  { key: "vignette", label: "Vignette %", min: 0, max: 100, step: 5, decimals: 0, container: "timingGroup", title: "How much the hole follows the falloff circle on the preview: 0 = two vertical lines, 100 = the circle" },
-  { key: "faith", label: "Faith %", min: 0, max: 100, step: 5, decimals: 0, container: "timingGroup", title: "100 = the hole follows the falloff, 0 = complete chaos (a random width per row and side)" },
+  { key: "opening", control: "slider", label: "Opening", min: 0, max: 100, step: 5, decimals: 0, suffix: "%", container: "timingGroup", title: "How far the rows open; the edge blocks stay on top of that" },
+  { key: "vignette", control: "slider", label: "Vignette", min: 0, max: 100, step: 5, decimals: 0, suffix: "%", container: "timingGroup", title: "How much the hole follows the falloff circle on the preview: 0 = two vertical lines, 100 = the circle" },
+  { key: "faith", control: "slider", label: "Faith", min: 0, max: 100, step: 5, decimals: 0, suffix: "%", container: "timingGroup", title: "100 = the hole follows the falloff, 0 = complete chaos (a random width per row and side)" },
   { key: "holdOpen", label: "Hold open", min: 0, max: 30, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup" },
   { key: "labelTime", label: "Text time", min: 0.3, max: 3, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup", title: "How long one label block takes to come in or go" },
   { key: "loopLen", label: "Loop length", min: 0.5, max: 30, step: 0.5, decimals: 1, suffix: "s", container: "timingGroup", title: "One-stage posters: how long the stripes' motion cycle is" },
@@ -561,19 +559,21 @@ const stepDefs: StepDef[] = [
   { key: "rowsBottom", label: "Rows bottom", min: 0, max: 24, step: 1, decimals: 0, container: "rowsGroup" },
   { key: "stripPx", label: "Strip height", min: 12, max: 120, step: 6, decimals: 0, container: "rowsGroup", title: "Block row: height of one strip row in px at 1080" },
   { key: "stagger", label: "Rows stagger", min: 0, max: 1, step: 0.05, decimals: 2, container: "shapeGroup", title: "Seconds between rows; the closing runs in reverse order" },
-  { key: "irregularity", label: "Irregularity %", min: 0, max: 100, step: 5, decimals: 0, container: "shapeGroup", title: "Extra blocks left standing per row and side, more towards the outer rows" },
+  { key: "irregularity", control: "slider", label: "Irregularity %", min: 0, max: 100, step: 5, decimals: 0, suffix: "%", container: "shapeGroup", title: "Extra blocks left standing per row and side, more towards the outer rows" },
   { key: "shapeSeed", label: "Shape seed", min: 0, max: 999999, step: 1, decimals: 0, container: "shapeGroup" },
   { key: "unitPx", label: "Block size", min: 12, max: 90, step: 3, decimals: 0, container: "blocksGroup", title: "The stripe unit in px at 1080: 45 in the reveal, 24 for the side blocks" },
-  { key: "blockWidth", label: "Block width", min: 1, max: 8, step: 1, decimals: 0, container: "blocksGroup", title: "Widest edge block in an open row, in units (one unit = card width / 24); the blocks breathe two units below that" },
-  { key: "blockTravel", label: "Block travel", min: 0, max: 12, step: 1, decimals: 0, container: "blocksGroup", title: "Largest sideways step of a row's pattern, in units" },
+  { key: "blockWidth", control: "slider", label: "Block width", min: 1, max: 8, step: 1, decimals: 0, container: "blocksGroup", title: "Widest edge block in an open row, in units (one unit = card width / 24); the blocks breathe two units below that" },
+  { key: "blockTravel", control: "slider", label: "Block travel", min: 0, max: 12, step: 1, decimals: 0, container: "blocksGroup", title: "Largest sideways step of a row's pattern, in units" },
   { key: "blockSeed", label: "Block seed", min: 0, max: 999999, step: 1, decimals: 0, container: "blocksGroup" },
-  { key: "floatCount", label: "Floaters", min: 0, max: 60, step: 1, decimals: 0, container: "floatGroup", title: "Floating blocks spread over the open rows; they grow, shrink to nothing and back, and drift" },
-  { key: "floatSize", label: "Floaters size", min: 0.5, max: 8, step: 0.5, decimals: 1, container: "floatGroup", title: "Largest floating block in units (smallest is half)" },
-  { key: "floatTravel", label: "Floaters travel", min: 0, max: 600, step: 10, decimals: 0, container: "floatGroup", title: "Largest sideways step of a floating block, px on the 1080 canvas" },
+  { key: "floatCount", control: "slider", label: "Floaters", min: 0, max: 60, step: 1, decimals: 0, container: "floatGroup", title: "Floating blocks spread over the open rows; they grow, shrink to nothing and back, and drift" },
+  { key: "floatSize", control: "slider", label: "Floaters size", min: 0.5, max: 8, step: 0.5, decimals: 1, container: "floatGroup", title: "Largest floating block in units (smallest is half)" },
+  { key: "floatTravel", control: "slider", label: "Floaters travel", min: 0, max: 600, step: 10, decimals: 0, container: "floatGroup", title: "Largest sideways step of a floating block, px on the 1080 canvas" },
 ];
 const numParams = params as unknown as Record<NumKey, number>;
 const stepInputs: Partial<Record<NumKey, HTMLInputElement>> = {};
+const sliderSyncs: Partial<Record<NumKey, () => void>> = {};
 const stepRows: Record<string, HTMLElement> = {};
+const SLIDER_TICKS = 57;
 
 function fmtStep(def: StepDef, v: number) {
   return `${v.toFixed(def.decimals)}${def.suffix ?? ""}`;
@@ -582,8 +582,87 @@ function syncStep(key: NumKey) {
   const def = stepDefs.find((d) => d.key === key);
   const inp = stepInputs[key];
   if (def && inp) inp.value = fmtStep(def, numParams[key]);
+  sliderSyncs[key]?.();
+}
+/**
+ * A slider: a row of ticks, the value's tick dark. Click or drag sets it,
+ * arrow keys step it; the label shows the value while the pointer is over
+ * the row.
+ */
+function renderSlider(def: StepDef) {
+  const row = document.createElement("div");
+  row.className = "row";
+  if (def.title) row.title = def.title;
+  const lbl = document.createElement("span");
+  lbl.className = "lbl";
+  lbl.textContent = def.label;
+  const slider = document.createElement("div");
+  slider.className = "slider";
+  slider.tabIndex = 0;
+  slider.setAttribute("role", "slider");
+  slider.dataset.key = def.key;
+  const ticks: HTMLElement[] = [];
+  for (let i = 0; i < SLIDER_TICKS; i++) {
+    const t = document.createElement("i");
+    slider.appendChild(t);
+    ticks.push(t);
+  }
+  row.append(lbl, slider);
+  stepRows[def.key] = row;
+  let hover = false;
+  const sync = () => {
+    const v = numParams[def.key];
+    const idx = Math.round(((v - def.min) / (def.max - def.min)) * (SLIDER_TICKS - 1));
+    ticks.forEach((t, i) => t.classList.toggle("on", i === idx));
+    slider.setAttribute("aria-valuenow", String(v));
+    lbl.textContent = hover ? fmtStep(def, v) : def.label;
+  };
+  sliderSyncs[def.key] = sync;
+  const set = (v: number) => {
+    const snapped = Math.round(v / def.step) * def.step;
+    numParams[def.key] = clamp(Math.round(snapped * 1000) / 1000, def.min, def.max);
+    sync();
+    rebuild();
+  };
+  const at = (clientX: number) => {
+    const r = slider.getBoundingClientRect();
+    if (r.width <= 0) return;
+    set(def.min + clamp((clientX - r.left) / r.width, 0, 1) * (def.max - def.min));
+  };
+  let dragging = false;
+  slider.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    dragging = true;
+    slider.setPointerCapture(e.pointerId);
+    slider.focus({ preventScroll: true });
+    at(e.clientX);
+  });
+  slider.addEventListener("pointermove", (e) => {
+    if (dragging) at(e.clientX);
+  });
+  for (const ev of ["pointerup", "pointercancel"]) slider.addEventListener(ev, () => (dragging = false));
+  slider.addEventListener("keydown", (e) => {
+    const dir = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
+    if (!dir) return;
+    e.preventDefault();
+    set(numParams[def.key] + dir * def.step * (e.shiftKey ? 10 : 1));
+  });
+  row.addEventListener("pointerenter", () => {
+    hover = true;
+    sync();
+  });
+  row.addEventListener("pointerleave", () => {
+    hover = false;
+    sync();
+  });
+  sync();
+  const host = $<HTMLDivElement>(def.container);
+  const seg = host.querySelector(":scope > .seg");
+  if (seg) host.insertBefore(row, seg);
+  else host.appendChild(row);
 }
 function renderStep(def: StepDef) {
+  if (def.control === "slider") return renderSlider(def);
   const row = document.createElement("div");
   row.className = "row";
   if (def.title) row.title = def.title;
@@ -656,7 +735,6 @@ const TEXT_ROWS: Record<string, number[]> = {
   artistRow: [1, 3],
   stageRow: [1, 3],
 };
-const MOVABLE_GROUPS = ["blocksGroup", "timingGroup", "shapeGroup", "rowsGroup", "floatGroup", "colorGroup"];
 function syncVisibility() {
   const layout = params.layout;
   const hidden = new Set<NumKey>(HIDDEN_STEPS[layout]);
@@ -671,39 +749,6 @@ function syncVisibility() {
   for (const id of ["timingGroup", "rowsGroup", "shapeGroup", "blocksGroup", "floatGroup"]) {
     const g = $<HTMLElement>(id);
     g.hidden = Array.from(g.children).every((c) => (c as HTMLElement).hidden);
-  }
-  balanceColumns();
-}
-// The two settings columns keep about the same height: the text fields
-// stay top left and Loops / Export bottom right, the groups in between go
-// to whichever column is shorter. The reveal keeps the design's own order.
-function balanceColumns() {
-  const left = $<HTMLDivElement>("colLeft");
-  const right = $<HTMLDivElement>("colRight");
-  const exportGroup = $<HTMLElement>("exportGroup");
-  const GAP = 24;
-  const groups = MOVABLE_GROUPS.map((id) => $<HTMLElement>(id));
-  if (params.layout === "reveal") {
-    for (const g of groups.slice(0, 2)) left.appendChild(g);
-    for (const g of groups.slice(2)) right.insertBefore(g, exportGroup);
-    return;
-  }
-  for (const g of groups) g.remove();
-  const heightOf = (el: HTMLElement) => (el.hidden ? 0 : el.offsetHeight + GAP);
-  let lh = Array.from(left.children).reduce((a, c) => a + heightOf(c as HTMLElement), 0);
-  let rh = Array.from(right.children).reduce((a, c) => a + heightOf(c as HTMLElement), 0);
-  for (const g of groups) {
-    if (g.hidden) {
-      left.appendChild(g);
-      continue;
-    }
-    if (lh <= rh) {
-      left.appendChild(g);
-      lh += heightOf(g);
-    } else {
-      right.insertBefore(g, exportGroup);
-      rh += heightOf(g);
-    }
   }
 }
 
@@ -854,6 +899,12 @@ function stepColorway(dir: 1 | -1) {
   // custom colours: the arrows enter the list at its ends
   applyColorway(i ? i + dir : dir > 0 ? 1 : COLORWAYS.length);
 }
+/**
+ * The Colours row: the colourway arrows and index, the four stripe colours
+ * and the text blocks' yellow. A click on a swatch makes it the text
+ * blocks' colour, a double click opens the picker, Alt-click copies the hex.
+ */
+const YELLOW_KEY = "";
 function buildColorRow() {
   const host = $<HTMLDivElement>("colorGroup");
   host.innerHTML = "";
@@ -862,39 +913,52 @@ function buildColorRow() {
   row.innerHTML = `
     <span class="lbl">Colours</span>
     <button type="button" class="btn w20" data-dir="-1" title="Previous colourway">\u2190</button>
-    <input type="text" class="w45 center" id="colorwayIndex" spellcheck="false" title="Colourway 1 to ${COLORWAYS.length}" />
-    <div class="swatch-grid">
+    <input type="text" class="w45" id="colorwayIndex" spellcheck="false" title="Colourway 1 to ${COLORWAYS.length}" />
+    <div class="swatches">
       ${swatchKeys.map((k) => `<button type="button" class="swatch" data-key="${k}"></button>`).join("")}
+      <button type="button" class="swatch" data-key="${YELLOW_KEY}" title="${params.colors.labelBg}"></button>
     </div>
     <button type="button" class="btn w20" data-dir="1" title="Next colourway">\u2192</button>`;
   for (const sw of row.querySelectorAll<HTMLButtonElement>(".swatch")) {
-    const key = sw.dataset.key as keyof Colors;
-    swatches[key] = sw;
-    sw.style.background = params.colors[key];
-    sw.title = params.colors[key];
-    // a click copies the hex, a double click opens the picker
+    const key = sw.dataset.key as keyof Colors | typeof YELLOW_KEY;
+    if (key) {
+      swatches[key] = sw;
+      sw.style.background = params.colors[key];
+      sw.title = params.colors[key];
+    } else {
+      sw.style.background = params.colors.labelBg;
+    }
+    const hexOf = () => (key ? params.colors[key] : params.colors.labelBg);
     let clickTimer = 0;
-    sw.addEventListener("click", () => {
+    sw.addEventListener("click", (e) => {
       window.clearTimeout(clickTimer);
-      clickTimer = window.setTimeout(() => {
-        const hex = params.colors[key];
+      if (e.altKey) {
+        const hex = hexOf();
         navigator.clipboard.writeText(hex).then(
           () => {
             sw.title = `${hex} copied`;
-            setTimeout(() => (sw.title = params.colors[key]), 1200);
+            setTimeout(() => (sw.title = hexOf()), 1200);
           },
-          () => openPicker(sw, key),
+          () => prompt("Hex:", hex),
         );
+        return;
+      }
+      clickTimer = window.setTimeout(() => {
+        params.blockColor = key as BlockColor;
+        syncBlockRow();
+        schedule();
       }, 220);
     });
     sw.addEventListener("dblclick", () => {
       window.clearTimeout(clickTimer);
-      openPicker(sw, key);
+      if (key) openPicker(sw, key);
     });
-    sw.addEventListener("pointerenter", () => (hoveredSwatch = key));
-    sw.addEventListener("pointerleave", () => {
-      if (hoveredSwatch === key) hoveredSwatch = null;
-    });
+    if (key) {
+      sw.addEventListener("pointerenter", () => (hoveredSwatch = key));
+      sw.addEventListener("pointerleave", () => {
+        if (hoveredSwatch === key) hoveredSwatch = null;
+      });
+    }
   }
   for (const b of row.querySelectorAll<HTMLButtonElement>("[data-dir]")) {
     b.addEventListener("click", () => stepColorway(Number(b.dataset.dir) as 1 | -1));
@@ -916,35 +980,13 @@ function buildColorRow() {
     }
   });
   host.appendChild(row);
-  // the text blocks' colour: the design's yellow or one of the four
-  const brow = document.createElement("div");
-  brow.className = "row field blockrow";
-  brow.innerHTML = `<span class="lbl">Blocks</span><div class="seg" id="blockSeg" title="The colour behind the words; the text turns black or white, whichever reads better">
-      <button type="button" class="btn" data-block="">Yellow</button>
-      ${swatchKeys.map((k) => `<button type="button" class="btn swatchbtn" data-block="${k}" title="${k}"></button>`).join("")}
-    </div>`;
-  host.appendChild(brow);
-  for (const b of brow.querySelectorAll<HTMLButtonElement>("[data-block]")) {
-    b.addEventListener("click", () => {
-      params.blockColor = b.dataset.block as BlockColor;
-      syncBlockRow();
-      schedule();
-    });
-  }
   syncColorway();
   syncBlockRow();
 }
+/** The swatch of the text blocks' colour is marked. */
 function syncBlockRow() {
-  for (const b of document.querySelectorAll<HTMLButtonElement>("#blockSeg [data-block]")) {
-    const key = b.dataset.block as BlockColor;
-    b.classList.toggle("active", key === params.blockColor);
-    if (key) {
-      const hex = params.colors[key];
-      b.style.background = hex;
-      b.style.color = contrastText(hex);
-      b.textContent = key === params.blockColor ? "T" : "";
-      b.title = hex;
-    }
+  for (const b of document.querySelectorAll<HTMLButtonElement>("#colorGroup .swatch")) {
+    b.classList.toggle("active", (b.dataset.key ?? "") === params.blockColor);
   }
 }
 buildColorRow();
@@ -1044,29 +1086,26 @@ stageEl.addEventListener("drop", (e) => {
 
 // ---------- video background ----------
 // An MP4 (or MOV / WebM the browser can play) behind the card instead of a
-// photo. The strip above the card shows the piece that is used, as long as
-// the export: drag it to move the start, like the music. Playback follows
-// the timeline; exports seek the video frame by frame.
+// photo. The piece used is as long as the export; the stepper in the Image
+// row says where in the video it starts. Playback follows the timeline;
+// exports seek the video frame by frame.
 interface VideoTrack {
-  el: HTMLVideoElement; // the one drawn on the card
-  thumbEl: HTMLVideoElement; // a second decoder for the filmstrip, so the thumbnails never seek the playing one
+  el: HTMLVideoElement; // the one drawn on the card; it sits in the page, unseen, so Safari keeps decoding it
   file: File;
   duration: number;
-  thumbs: HTMLCanvasElement[]; // a filmstrip over the whole video
 }
 let video: VideoTrack | null = null;
 let videoStart = 0; // s into the video where the loop starts
-const filmEl = $<HTMLDivElement>("film");
-const filmTimeEl = $<HTMLButtonElement>("filmTime");
-const filmTicksEl = $<HTMLDivElement>("filmTicks");
-const filmCanvas = $<HTMLCanvasElement>("filmCanvas");
+const videoStartStepper = $<HTMLDivElement>("videoStartStepper");
+const videoStartText = $<HTMLInputElement>("videoStartText");
 /** How much of the video one export uses: the export length, or the whole video if that is shorter (it then loops). */
 function videoSpan(): number {
   return video ? Math.min(video.duration, exportLength()) : 0;
 }
+/** The video time for a timeline time: from the start, round the end of the video when the piece runs past it. */
 function videoTimeAt(t: number): number {
   const span = videoSpan();
-  return span > 0 ? videoStart + (t % span) : 0;
+  return span > 0 && video ? (videoStart + (t % span)) % video.duration : 0;
 }
 function seekVideo(t: number, el: HTMLVideoElement | null = video?.el ?? null): Promise<void> {
   if (!el) return Promise.resolve();
@@ -1111,6 +1150,8 @@ async function loadVideoFile(file: File) {
   el.playsInline = true;
   el.preload = "auto";
   el.loop = true;
+  el.className = "offscreen-video";
+  el.setAttribute("aria-hidden", "true");
   const url = URL.createObjectURL(file);
   el.src = url;
   try {
@@ -1126,115 +1167,70 @@ async function loadVideoFile(file: File) {
   if (gen !== loadGen) return;
   clearVideo();
   imageFile = null;
-  const thumbEl = document.createElement("video");
-  thumbEl.muted = true;
-  thumbEl.playsInline = true;
-  thumbEl.preload = "auto";
-  thumbEl.src = url;
-  video = { el, thumbEl, file, duration: el.duration, thumbs: [] };
+  document.body.appendChild(el);
+  video = { el, file, duration: el.duration };
   videoStart = 0;
   params.imageZoom = 1;
   params.imageX = 0;
   params.imageY = 0;
   await seekVideo(0);
   setImage({ source: el, width: el.videoWidth, height: el.videoHeight });
-  filmEl.hidden = false;
-  void buildFilmThumbs(video).then(() => {
-    if (video?.el === el) syncFilm();
-  });
-  syncFilm();
+  videoStartStepper.hidden = false;
+  syncVideoStart();
   if (playing) syncVideo();
 }
 function clearVideo() {
   if (!video) return;
   video.el.pause();
-  video.thumbEl.removeAttribute("src");
   URL.revokeObjectURL(video.el.src);
+  video.el.remove();
   video = null;
-  filmEl.hidden = true;
+  videoStartStepper.hidden = true;
 }
-/** Sixteen small frames over the whole video, for the strip. */
-async function buildFilmThumbs(v: VideoTrack) {
-  const n = 16;
-  const h = 56;
-  const w = Math.max(8, Math.round((h * v.el.videoWidth) / v.el.videoHeight));
-  const el = v.thumbEl;
-  if (el.readyState < 1) await new Promise<void>((res) => el.addEventListener("loadedmetadata", () => res(), { once: true }));
-  for (let i = 0; i < n; i++) {
-    if (video !== v) return;
-    const t = ((i + 0.5) / n) * v.duration;
-    await seekVideo(t, el);
-    const c = document.createElement("canvas");
-    c.width = w;
-    c.height = h;
-    c.getContext("2d")!.drawImage(el, 0, 0, w, h);
-    v.thumbs.push(c);
-    syncFilm();
-  }
+function fmtSeconds(s: number): string {
+  return `${Number.isInteger(s) ? s : s.toFixed(1)}s`;
 }
-function syncFilm() {
-  if (!video) return;
-  const r = filmTicksEl.getBoundingClientRect();
-  const w = Math.max(10, Math.round(r.width || ticksWidth));
-  const h = 28;
-  if (filmCanvas.width !== w * 2) {
-    filmCanvas.width = w * 2;
-    filmCanvas.height = h * 2;
-  }
-  const ctx = filmCanvas.getContext("2d")!;
-  ctx.setTransform(2, 0, 0, 2, 0, 0);
-  ctx.clearRect(0, 0, w, h);
-  const span = videoSpan();
-  const n = video.thumbs.length;
-  if (n) {
-    const tw = video.thumbs[0].width * (h / video.thumbs[0].height);
-    for (let x = 0; x < w; x += tw) {
-      const t = videoStart + (x / w) * span;
-      const i = Math.min(n - 1, Math.max(0, Math.floor((t / video.duration) * n)));
-      ctx.drawImage(video.thumbs[i], x, 0, tw, h);
-    }
-  } else {
-    ctx.fillStyle = "#dadada";
-    ctx.fillRect(0, 0, w, h);
-  }
-  // the playhead
-  const total = exportLength();
-  if (total > 0) {
-    const x = Math.round(((time % total) / total) * w);
-    ctx.fillStyle = "#737373";
-    ctx.fillRect(x - 1, 0, 2, h);
-  }
-  filmTimeEl.textContent = fmtTime(videoStart);
+function syncVideoStart() {
+  videoStartText.value = fmtSeconds(videoStart);
 }
 function setVideoStart(s: number) {
   if (!video) return;
-  videoStart = clamp(s, 0, Math.max(0, video.duration - videoSpan()));
-  syncFilm();
+  videoStart = clamp(Math.round(s * 10) / 10, 0, Math.max(0, Math.floor((video.duration - 0.1) * 10) / 10));
+  syncVideoStart();
   syncVideo();
 }
-let filmDrag = false;
-let filmX0 = 0;
-let filmStart0 = 0;
-filmTicksEl.addEventListener("pointerdown", (e) => {
-  if (e.button !== 0) return;
-  filmDrag = true;
-  filmX0 = e.clientX;
-  filmStart0 = videoStart;
-  filmTicksEl.setPointerCapture(e.pointerId);
-});
-filmTicksEl.addEventListener("pointermove", (e) => {
-  if (!filmDrag || !video) return;
-  const r = filmTicksEl.getBoundingClientRect();
-  if (r.width <= 0) return;
-  setVideoStart(filmStart0 - ((e.clientX - filmX0) / r.width) * videoSpan());
-});
-for (const ev of ["pointerup", "pointercancel"]) filmTicksEl.addEventListener(ev, () => (filmDrag = false));
+for (const b of videoStartStepper.querySelectorAll<HTMLButtonElement>("button")) {
+  b.addEventListener("click", (e) => {
+    const dir = parseInt(b.dataset.dir ?? "1", 10);
+    setVideoStart(videoStart + dir * (e.shiftKey ? 10 : 1));
+  });
+}
+{
+  const commit = () => {
+    const v = parseFloat(videoStartText.value.replace(/[^0-9.]/g, ""));
+    if (Number.isFinite(v)) setVideoStart(v);
+    else syncVideoStart();
+  };
+  videoStartText.addEventListener("change", commit);
+  videoStartText.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      commit();
+      videoStartText.blur();
+    } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+      e.preventDefault();
+      setVideoStart(videoStart + (e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 10 : 1));
+    }
+  });
+}
 
 // ---------- .touquet files ----------
 // Everything in one JSON file: the settings and the photo or video and
 // the music as base64, so a card can be picked up again later or elsewhere.
-const fileNameEl = $<HTMLInputElement>("fileName");
 const touquetInput = $<HTMLInputElement>("touquetInput");
+let docName = ""; // the name of the last saved or opened file
+interface SaveFilePickerWindow {
+  showSaveFilePicker?: (opts: { suggestedName?: string; types?: { description: string; accept: Record<string, string[]> }[] }) => Promise<FileSystemFileHandle>;
+}
 function bytesToBase64(bytes: Uint8Array): string {
   let bin = "";
   for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -1250,8 +1246,33 @@ async function blobEntry(blob: Blob | null, name: string): Promise<{ name: strin
   if (!blob) return null;
   return { name, type: blob.type, data: bytesToBase64(new Uint8Array(await blob.arrayBuffer())) };
 }
+/**
+ * Save as a .touquet: the browser's own save dialog where there is one
+ * (Chrome, Edge), elsewhere a prompt for the name and a download.
+ */
 async function saveTouquet() {
-  const name = fileNameEl.value.trim() || PRESET_NAMES[params.preset] || "card";
+  const suggested = docName || PRESET_NAMES[params.preset] || "card";
+  const picker = (window as unknown as SaveFilePickerWindow).showSaveFilePicker;
+  let handle: FileSystemFileHandle | null = null;
+  let name = suggested;
+  if (picker) {
+    try {
+      handle = await picker.call(window, {
+        suggestedName: `${suggested}.touquet`,
+        types: [{ description: "Touquet card", accept: { "application/json": [".touquet"] } }],
+      });
+    } catch (e) {
+      if ((e as DOMException).name === "AbortError") return;
+      handle = null;
+    }
+    if (handle) name = handle.name.replace(/\.touquet$/i, "");
+  }
+  if (!handle) {
+    const typed = prompt("Save as:", suggested);
+    if (typed === null) return;
+    name = typed.trim().replace(/\.touquet$/i, "") || suggested;
+  }
+  docName = name;
   let photo = imageFile;
   if (!photo && image && !video) {
     // a preset photo: fetch it as it is served
@@ -1273,6 +1294,12 @@ async function saveTouquet() {
     audioStart,
   };
   const blob = new Blob([JSON.stringify(doc)], { type: "application/json" });
+  if (handle) {
+    const w = await handle.createWritable();
+    await w.write(blob);
+    await w.close();
+    return;
+  }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `${name.replace(/[/\\:]/g, "-")}.touquet`;
@@ -1296,7 +1323,7 @@ async function loadTouquetFile(file: File) {
     alert("That is not a .touquet file.");
     return;
   }
-  fileNameEl.value = doc.name || file.name.replace(/\.touquet$/i, "");
+  docName = doc.name || file.name.replace(/\.touquet$/i, "");
   applySettings(JSON.stringify(doc.params));
   applyFormat();
   rebuild();
@@ -1875,27 +1902,6 @@ function applySettings(str: string): boolean {
   rebuild();
   return true;
 }
-const copyBtn = $<HTMLButtonElement>("copySettingsBtn");
-const pasteBtn = $<HTMLButtonElement>("pasteSettingsBtn");
-copyBtn.addEventListener("click", async () => {
-  const str = JSON.stringify(params);
-  try {
-    await navigator.clipboard.writeText(str);
-    flash(copyBtn, "Copied");
-  } catch {
-    prompt("Copy settings:", str);
-  }
-});
-pasteBtn.addEventListener("click", async () => {
-  let text = "";
-  try {
-    text = await navigator.clipboard.readText();
-  } catch {
-    text = prompt("Paste settings string:") ?? "";
-  }
-  if (!text) return;
-  flash(pasteBtn, applySettings(text) ? "Applied" : "Invalid", 1200);
-});
 
 // ---------- Figma ----------
 // The card as native Figma layers: the background (photo, strips, floaters,
@@ -1906,7 +1912,7 @@ pasteBtn.addEventListener("click", async () => {
 // plugin can paste it.
 const IN_PLUGIN = window.parent !== window && new URLSearchParams(location.search).has("plugin");
 const figmaBtn = $<HTMLButtonElement>("figmaBtn");
-figmaBtn.textContent = IN_PLUGIN ? "Send to Figma" : "Copy for Figma";
+figmaBtn.textContent = IN_PLUGIN ? "Send to Figma" : "Export Figma";
 figmaBtn.title = IN_PLUGIN
   ? "Build the frame shown in the preview as editable Figma layers"
   : "Copy the frame shown in the preview for the Artist Card Figma plugin: run the plugin and press Paste from clipboard";
@@ -2126,6 +2132,8 @@ declare global {
       indesignZip: () => Promise<{ bytes: Uint8Array; name: string }>;
       illustratorSvg: () => Promise<{ svg: string; name: string }>;
       videoEl: () => HTMLVideoElement | null;
+      videoStart: () => number;
+      logoRect: () => Rect | null;
       setTime: (t: number) => void;
       apply: (json: string) => boolean;
       loadImageUrl: (url: string) => Promise<void>;
@@ -2141,6 +2149,8 @@ window.artistCard = {
   indesignZip: async () => buildIdmlZip(await figmaSpec()),
   illustratorSvg: async () => buildIllustratorSvg(await figmaSpec()),
   videoEl: () => video?.el ?? null,
+  videoStart: () => videoStart,
+  logoRect: () => logoRect(params, scene, 1),
   setTime: (t: number) => {
     setTime(t);
     draw();

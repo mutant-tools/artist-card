@@ -1,5 +1,5 @@
 // Artist Card plugin: rebuilds a card from the tool's "Send to Figma" /
-// "Copy for Figma" description as native, editable layers.
+// "Export Figma" description as native, editable layers.
 //
 // Card (a plain frame)
 //   Photo            image fill

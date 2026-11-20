@@ -35,7 +35,7 @@
         if (!spec || spec.v !== 1 || !Array.isArray(spec.rows)) throw new Error("not a card");
         send(spec);
       } catch {
-        say("That is not a Copy for Figma description.");
+        say("That is not an Export Figma description.");
       }
     };
     window.addEventListener("message", (e) => {
