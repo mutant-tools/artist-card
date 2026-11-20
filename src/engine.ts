@@ -1244,8 +1244,7 @@ export const PARAGRAPH_LEADING = 1.3;
  * An info text as ONE block: its words wrapped to `maxW` (the block's
  * outer width), line breaks kept, lines centred, 130% leading and no
  * padding between the lines. `px` is the size on the 540 px design. The
- * block hugs its longest line. One line keeps the sentence's even padding;
- * a paragraph takes the design's 2/3 above and 4/3 below.
+ * block hugs its longest line; the padding is the type size, all round.
  */
 function paragraphRow(ctx: CanvasRenderingContext2D, text: string, px: number, S: number, maxW: number, family: string): LabelRow | null {
   const paras = text.replace(/\s+$/, "").replace(/^\s*\n/, "").split(/\n/).map((l) => l.trim());
@@ -1276,8 +1275,10 @@ function paragraphRow(ctx: CanvasRenderingContext2D, text: string, px: number, S
   }
   const lineH = PARAGRAPH_LEADING * fs;
   const many = lines.length > 1;
-  const padTop = ((many ? (px * 2) / 3 : px) / D) * S;
-  const padBottom = ((many ? (px * 4) / 3 : px) / D) * S;
+  // the same padding above the first line's capitals as below the last
+  // baseline, one line or many (the design's 12 / 24 read as bottom-heavy)
+  const padTop = (px / D) * S;
+  const padBottom = (px / D) * S;
   const w = lines.reduce((a, l) => Math.max(a, l.w), 0) + 2 * padX;
   const h = padTop + capH + (lines.length - 1) * lineH + padBottom;
   return rowOf([{ text: lines.map((l) => l.text).join("\n"), w, h, fs, padX, padTop, capH, tracking, lines: many ? lines : undefined, lineH: many ? lineH : undefined }], 0);
