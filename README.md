@@ -35,7 +35,7 @@ scrolls when they run past the window). The sliders are rows of ticks:
 click or drag, arrow keys step, and the label shows the value while the
 pointer is over the row.
 
-- **Format** 4:5, 1:1, 16:9, 9:16 (1080-based canvases). **Layout preset** the
+- **Format** 4:5, 1:1, 9:16 (1080-based canvases). **Layout preset** the
   examples from the Figma sheet, photo included: 1 Reveal (the two-stage
   construction), 2 Infos Pratiques (side blocks, 24 px units, title at the
   top, sentence at the bottom), 3 Full blocks (the stripes held open
@@ -145,7 +145,7 @@ pointer is over the row.
 - The URL hash always carries every setting that differs from the defaults
   (photo excepted), so the link itself restores the state.
 - **Export MP4 / PNG** at the card's size: 1080x1080, 1080x1350,
-  1920x1080 or 1080x1920. Without a photo the PNG is transparent.
+  or 1080x1920. Without a photo the PNG is transparent.
 - **Export Figma** the frame shown in the preview, for the Figma plugin
   (see Figma below).
 - **Export InDesign / Illustrator** the frame shown in the preview as an

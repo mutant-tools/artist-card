@@ -2,12 +2,11 @@
 // Everything is computed from (params, time) so playback, scrubbing and
 // export all share one code path.
 
-export type Format = "4:5" | "9:16" | "1:1" | "16:9";
+export type Format = "4:5" | "9:16" | "1:1";
 export const FORMATS: Record<Format, [number, number]> = {
   "4:5": [1080, 1350],
   "9:16": [1080, 1920],
   "1:1": [1080, 1080],
-  "16:9": [1920, 1080],
 };
 
 export type Bezier = [number, number, number, number];
