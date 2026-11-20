@@ -148,6 +148,14 @@ pointer is over the row.
   or 1080x1920. Without a photo the PNG is transparent.
 - **Export Figma** the frame shown in the preview, for the Figma plugin
   (see Figma below).
+- **Undo / redo** Cmd+Z and Cmd+Shift+Z step through every setting change
+  (a slider drag or a typed word is one step); photos, video and music are
+  not part of the history. Inside a text field Cmd+Z is the field's own undo.
+- **Shortcuts** the ? in the bottom-right corner of the preview lists them
+  (hover, click or press ?): Space plays, arrows step frames (Shift: ten),
+  Home/End jump, Up/Down change the colourway, 1-4 pick a preset, F cycles
+  the format, L the logo position, Cmd+S / Cmd+O save and open a .touquet,
+  Cmd+I loads a photo or video, Cmd+E exports the MP4, Cmd+Shift+E the PNG.
 - **Export InDesign / Illustrator** the frame shown in the preview as an
   InDesign or Illustrator file (see below).
 - **Save** and **Load**: everything in one `.touquet` file (settings, the

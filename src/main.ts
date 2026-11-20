@@ -116,6 +116,7 @@ function syncHash() {
     hashTimer = 0;
     const h = serializeHash();
     if (h === lastHash) return;
+    recordHistory(lastHash, h);
     lastHash = h;
     storeFigmaSettings(h);
     try {
@@ -153,6 +154,11 @@ function storedFigmaSettings(): string {
 function readHash(): boolean {
   const h = location.hash.replace(/^#/, "") || storedFigmaSettings();
   if (!h) return false;
+  lastHash = h;
+  return applySettings(parseHash(h));
+}
+/** The settings in a hash string, as the JSON applySettings takes. */
+function parseHash(h: string): string {
   const q = new URLSearchParams(h);
   const obj: Record<string, unknown> = {};
   const def = flatten(DEFAULT_PARAMS);
@@ -169,8 +175,84 @@ function readHash(): boolean {
     }
     host[path[path.length - 1]] = value;
   }
+  return JSON.stringify(obj);
+}
+
+// ---------- undo / redo ----------
+// Every state is its hash string. A change that keeps touching the same
+// settings (a slider drag, typing in a field) is one step; the stacks hold
+// the state before each step. Photos, video and music are not part of it.
+
+const HISTORY_MAX = 200;
+const HISTORY_MERGE_MS = 1200;
+const undoStack: string[] = [];
+const redoStack: string[] = [];
+let restoring = false;
+let lastEditKeys = "";
+let lastEditAt = 0;
+function changedKeys(a: string, b: string): string {
+  const qa = new URLSearchParams(a);
+  const qb = new URLSearchParams(b);
+  const keys = new Set<string>();
+  for (const [k, v] of qa) if (qb.get(k) !== v) keys.add(k);
+  for (const [k, v] of qb) if (qa.get(k) !== v) keys.add(k);
+  return [...keys].sort().join(" ");
+}
+function recordHistory(prev: string, next: string) {
+  if (restoring) return;
+  const keys = changedKeys(prev, next);
+  const now = performance.now();
+  if (undoStack.length && keys === lastEditKeys && now - lastEditAt < HISTORY_MERGE_MS) {
+    lastEditAt = now; // the same control still moving: part of the same step
+    return;
+  }
+  undoStack.push(prev);
+  if (undoStack.length > HISTORY_MAX) undoStack.shift();
+  redoStack.length = 0;
+  lastEditKeys = keys;
+  lastEditAt = now;
+}
+/** Put the tool in the state `h` describes, defaults for everything it leaves out. */
+function restoreState(h: string) {
+  restoring = true;
+  if (hashTimer) {
+    clearTimeout(hashTimer);
+    hashTimer = 0;
+  }
+  const prevPreset = params.preset;
+  const artist2Was = !!params.artist2;
+  Object.assign(params, structuredClone(DEFAULT_PARAMS));
+  applySettings(parseHash(h));
+  if (!params.artist2 && artist2Was) showArtist2(false);
+  syncUI();
+  applyFormat();
+  rebuild();
+  if (params.preset !== prevPreset) loadPhotoUrl(presetPhoto(params.preset));
   lastHash = h;
-  return applySettings(JSON.stringify(obj));
+  storeFigmaSettings(h);
+  try {
+    history.replaceState(null, "", h ? `#${h}` : location.pathname + location.search);
+  } catch {
+    // sandboxed frames
+  }
+  lastEditKeys = "";
+  restoring = false;
+}
+function undo() {
+  if (!undoStack.length) return;
+  const cur = serializeHash();
+  const prev = undoStack.pop()!;
+  if (prev === cur) return undo();
+  redoStack.push(cur);
+  restoreState(prev);
+}
+function redo() {
+  if (!redoStack.length) return;
+  const cur = serializeHash();
+  const next = redoStack.pop()!;
+  if (next === cur) return redo();
+  undoStack.push(cur);
+  restoreState(next);
 }
 function rebuild() {
   scene = buildScene(params);
@@ -334,11 +416,75 @@ function setTime(t: number) {
 }
 frameBtn.addEventListener("click", () => setPlaying(!playing));
 
+/** Click the button after (or before) the active one in a segmented row. */
+function cycleSeg(id: string, dir: 1 | -1) {
+  const btns = Array.from($<HTMLDivElement>(id).querySelectorAll<HTMLButtonElement>("button"));
+  const i = btns.findIndex((b) => b.classList.contains("active"));
+  btns[(i + dir + btns.length) % btns.length]?.click();
+}
 document.addEventListener("keydown", (e) => {
   const t = e.target as HTMLElement | null;
   const tag = t?.tagName ?? "";
-  if (t?.isContentEditable || tag === "TEXTAREA" || tag === "SELECT" || tag === "INPUT") return;
-  if (e.metaKey || e.ctrlKey) return;
+  const inField = !!t?.isContentEditable || tag === "TEXTAREA" || tag === "SELECT" || tag === "INPUT";
+  if (e.metaKey || e.ctrlKey) {
+    if (e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === "z") {
+      if (inField) return; // the field's own undo
+      e.preventDefault();
+      if (e.shiftKey) redo();
+      else undo();
+    } else if (k === "s") {
+      e.preventDefault();
+      $<HTMLButtonElement>("saveBtn").click();
+    } else if (k === "o") {
+      e.preventDefault();
+      $<HTMLButtonElement>("loadBtn").click();
+    } else if (k === "i") {
+      e.preventDefault();
+      $<HTMLButtonElement>("imageLoadBtn").click();
+    } else if (k === "e") {
+      e.preventDefault();
+      (e.shiftKey ? exportPngBtn : exportMp4Btn).click();
+    }
+    return;
+  }
+  if (inField) return;
+  if (e.altKey) return;
+  if (e.key === "?") {
+    e.preventDefault();
+    helpEl.classList.toggle("pinned");
+    return;
+  }
+  if (e.key === "Escape" && helpEl.classList.contains("pinned")) {
+    helpEl.classList.remove("pinned");
+    return;
+  }
+  if (e.key >= "1" && e.key <= "4" && !e.shiftKey) {
+    e.preventDefault();
+    document.querySelector<HTMLButtonElement>(`[data-preset="${e.key}"]`)?.click();
+    return;
+  }
+  if (e.key === "f" || e.key === "F") {
+    e.preventDefault();
+    cycleSeg("formatSeg", e.shiftKey ? -1 : 1);
+    return;
+  }
+  if (e.key === "l" || e.key === "L") {
+    e.preventDefault();
+    cycleSeg("logoSeg", e.shiftKey ? -1 : 1);
+    return;
+  }
+  if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+    e.preventDefault();
+    stepColorway(e.key === "ArrowUp" ? 1 : -1);
+    return;
+  }
+  if (e.key === "End") {
+    e.preventDefault();
+    setTime(exportLength() - 1 / FPS);
+    return;
+  }
   if ((e.key === "Backspace" || e.key === "Delete") && drag === "block" && dragKey) {
     // Backspace while holding a block row clears its text, so the row goes
     e.preventDefault();
@@ -2128,6 +2274,9 @@ declare global {
       illustratorSvg: () => Promise<{ svg: string; name: string }>;
       videoInfo: () => { duration: number; fps: number; width: number; height: number; codec: string; frameTime: number | null } | null;
       videoStart: () => number;
+      undo: () => void;
+      redo: () => void;
+      historyDepth: () => { undo: number; redo: number };
       logoRect: () => Rect | null;
       setTime: (t: number) => void;
       apply: (json: string) => boolean;
@@ -2138,8 +2287,91 @@ declare global {
     };
   }
 }
+// ---------- the shortcuts card ----------
+// A small ? in the corner of the preview; hovering it (or pressing ?) shows
+// every shortcut and gesture. One list, so the card and the handlers agree.
+
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
+const CMD = MAC ? "\u2318" : "Ctrl";
+const ALT = MAC ? "\u2325" : "Alt";
+const SHORTCUTS: [string, [string, string][]][] = [
+  [
+    "Playback",
+    [
+      ["Space", "Play or pause"],
+      ["\u2190 \u2192", "One frame back or forward"],
+      ["\u21e7 \u2190 \u2192", "Ten frames"],
+      ["Home / End", "First or last frame"],
+    ],
+  ],
+  [
+    "Edit",
+    [
+      [`${CMD} Z`, "Undo"],
+      [`${CMD} \u21e7 Z`, "Redo"],
+      ["\u2191 \u2193", "Previous or next colourway"],
+      ["1 \u2013 4", "Layout preset"],
+      ["F", "Next format (\u21e7 F back)"],
+      ["L", "Logo off, top, bottom"],
+      ["\u232b", "Clear the block row you are holding"],
+      ["Esc", "Deselect the falloff handle"],
+    ],
+  ],
+  [
+    "Files",
+    [
+      [`${CMD} S`, "Save a .touquet file"],
+      [`${CMD} O`, "Open a .touquet file"],
+      [`${CMD} I`, "Load a photo or video"],
+      [`${CMD} E`, "Export MP4"],
+      [`${CMD} \u21e7 E`, "Export PNG"],
+    ],
+  ],
+  [
+    "Mouse",
+    [
+      ["Drag the photo", "Pan"],
+      ["Scroll or pinch", "Zoom the photo (or the falloff)"],
+      ["Drag the name", "Move the artist row"],
+      ["Drag a block", "Move its row"],
+      ["\u21e7 drag a block", "Move the whole stack"],
+      ["Drag the handle", "Move the falloff (\u21e7 snaps to centre)"],
+      ["Click a swatch", "Colour of the text blocks"],
+      ["Double-click a swatch", "Pick a colour"],
+      [`${ALT} click a swatch`, "Copy its hex"],
+      ["Drag the strip", "Scrub the time, or move the music"],
+      ["Drop a file", "Photo, video, MP3 or .touquet"],
+    ],
+  ],
+];
+const helpEl = $<HTMLDivElement>("help");
+{
+  const panel = $<HTMLDivElement>("helpPanel");
+  for (const [title, rows] of SHORTCUTS) {
+    const h = document.createElement("span");
+    h.className = "title";
+    h.textContent = title;
+    panel.appendChild(h);
+    for (const [key, what] of rows) {
+      const k = document.createElement("kbd");
+      k.textContent = key;
+      const d = document.createElement("span");
+      d.className = "what";
+      d.textContent = what;
+      panel.append(k, d);
+    }
+  }
+  const helpBtn = $<HTMLButtonElement>("helpBtn");
+  helpBtn.addEventListener("click", () => {
+    if (!helpEl.classList.toggle("pinned")) helpBtn.blur();
+  });
+}
+
 window.artistCard = {
   params,
+  undo,
+  redo,
+  historyDepth: () => ({ undo: undoStack.length, redo: redoStack.length }),
   figmaSpec,
   indesignZip: async () => buildIdmlZip(await figmaSpec()),
   illustratorSvg: async () => buildIllustratorSvg(await figmaSpec()),
