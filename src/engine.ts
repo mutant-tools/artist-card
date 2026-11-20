@@ -21,6 +21,10 @@ export const STACK_KEYS: StackKey[] = ["icon", "title", "day", "time", "artist",
 /** The info sentence and the extra ones added with +. */
 export const INFO_KEYS = ["info", "info2", "info3", "info4"] as const;
 export type InfoKey = (typeof INFO_KEYS)[number];
+/** The size of one info block: the extra ones follow the first until they are given their own. */
+export function infoSizeOf(p: Params, key: InfoKey): InfoSize {
+  return key === "info" ? p.infoSize : p[`${key}Size`] || p.infoSize;
+}
 export type LogoPos = "off" | "top" | "bottom";
 export type LogoColor = "black" | "white";
 export type LogoStyle = "basic" | "10years" | "full" | "icon";
@@ -110,6 +114,9 @@ export interface Params {
   stackY: number; // one-stage layouts: the stack's edge as a fraction of H (bottom edge, or top edge with stackAnchor top)
   stackAnchor: StackAnchor;
   infoSize: InfoSize; // s = the 12 px sentence, m = the 18 px small block
+  info2Size: InfoSize | ""; // the extra info blocks: their own size, "" = the first one's
+  info3Size: InfoSize | "";
+  info4Size: InfoSize | "";
   preset: number; // the example last applied (1..4); 2..4 bring their own photo
   logo: LogoPos;
   logoColor: LogoColor;
@@ -191,6 +198,9 @@ export const DEFAULT_PARAMS: Params = {
   stackY: (1350 - 103) / 1350,
   stackAnchor: "bottom",
   infoSize: "s",
+  info2Size: "",
+  info3Size: "",
+  info4Size: "",
   preset: 1,
   logo: "off",
   logoColor: "black",
@@ -1630,7 +1640,7 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
         .split(/\n/)
         .map((line) => line.trim())
         .filter(Boolean)
-        .map((line) => layoutRow(ctx, [line], p.infoSize === "m" ? STYLE_SMALL_PLAIN : STYLE_SENTENCE, S, gap, maxW, fam))
+        .map((line) => layoutRow(ctx, [line], infoSizeOf(p, key) === "m" ? STYLE_SMALL_PLAIN : STYLE_SENTENCE, S, gap, maxW, fam))
         .filter((r): r is LabelRow => !!r);
     if (rows.length) items.set(key, rows);
   }

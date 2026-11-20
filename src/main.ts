@@ -28,6 +28,7 @@ import {
   LOGO_STYLES,
   ICON_POSITIONS,
   INFO_KEYS,
+  infoSizeOf,
   isInfoKey,
   type IconPos,
   contrastText,
@@ -944,13 +945,13 @@ function bindText(id: string, apply: (v: string) => void) {
 // Title and Info grow with their text: one line is a normal 32 px field,
 // two lines the design's 46 px, and 11 px for every further line.
 function autosize(el: HTMLInputElement) {
-  const btn = el.parentElement?.querySelector<HTMLElement>(".btn.tall");
-  if (btn) btn.style.height = "";
+  const btns = el.parentElement?.querySelectorAll<HTMLElement>(".btn.tall") ?? [];
+  for (const btn of btns) btn.style.height = "";
   el.style.height = "auto";
   const lines = Math.max(1, Math.round((el.scrollHeight - 12) / 11));
   const h = lines <= 1 ? 32 : 24 + 11 * lines;
   el.style.height = `${h}px`;
-  if (btn) btn.style.height = `${h}px`;
+  for (const btn of btns) btn.style.height = `${h}px`;
 }
 const titleEl = bindText("titleText", (v) => (params.title = v));
 const dayEl = bindText("dayText", (v) => (params.day = v));
@@ -989,6 +990,7 @@ function removeInfo(key: (typeof INFO_KEYS)[number]) {
   for (let j = Math.max(1, i); j < INFO_KEYS.length; j++) {
     const next = INFO_KEYS[j + 1];
     params[INFO_KEYS[j]] = next ? params[next] : "";
+    params[`${INFO_KEYS[j]}Size` as "info2Size"] = next ? params[`${next}Size` as "info2Size"] : "";
     delete params.free[INFO_KEYS[j]];
     infoEls[INFO_KEYS[j]].value = params[INFO_KEYS[j]];
     autosize(infoEls[INFO_KEYS[j]]);
@@ -1001,12 +1003,21 @@ function removeInfo(key: (typeof INFO_KEYS)[number]) {
   rebuild();
 }
 for (const key of INFO_KEYS.slice(1)) $<HTMLButtonElement>(`${key}RemoveBtn`).addEventListener("click", () => removeInfo(key));
-const infoSizeBtn = $<HTMLButtonElement>("infoSizeBtn");
-infoSizeBtn.addEventListener("click", () => {
-  params.infoSize = params.infoSize === "s" ? "m" : "s";
-  infoSizeBtn.textContent = params.infoSize.toUpperCase();
-  rebuild();
-});
+const infoSizeBtns = Object.fromEntries(INFO_KEYS.map((key) => [key, $<HTMLButtonElement>(`${key}SizeBtn`)])) as Record<(typeof INFO_KEYS)[number], HTMLButtonElement>;
+function syncInfoSizes() {
+  for (const key of INFO_KEYS) infoSizeBtns[key].textContent = infoSizeOf(params, key).toUpperCase();
+}
+for (const key of INFO_KEYS)
+  infoSizeBtns[key].addEventListener("click", () => {
+    const next = infoSizeOf(params, key) === "s" ? "m" : "s";
+    if (key === "info") {
+      // the extra blocks that were following the first keep the size they show
+      for (const o of INFO_KEYS.slice(1)) if (!params[`${o}Size`] && params[o]) params[`${o}Size`] = params.infoSize;
+      params.infoSize = next;
+    } else params[`${key}Size`] = next;
+    syncInfoSizes();
+    rebuild();
+  });
 const artist2Row = $<HTMLDivElement>("artist2Row");
 const artist2AddBtn = $<HTMLButtonElement>("artist2AddBtn");
 const artistLbl = $<HTMLSpanElement>("artistLbl");
@@ -1641,14 +1652,20 @@ let grabDY = 0; // pointer minus block centre at grab time (canvas px)
 const DETACH = 40; // css px
 function blockAt(x: number, y: number): StackKey | null {
   if (params.layout === "reveal") return null;
-  for (const key of [...STACK_KEYS].reverse()) {
-    const r = layout.blocks[key];
-    if (r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return key;
+  // what is drawn last is on top: free blocks over the stack, later rows over earlier ones
+  const present = [...params.stack, ...STACK_KEYS.filter((k) => !params.stack.includes(k))].filter((k) => layout.blocks[k]);
+  const drawn = [...present.filter((k) => params.free[k] === undefined), ...present.filter((k) => params.free[k] !== undefined)];
+  for (const key of drawn.reverse()) {
+    const r = layout.blocks[key]!;
+    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return key;
   }
   return null;
 }
 function stackedKeys(): StackKey[] {
-  return params.stack.filter((k) => layout.blocks[k] && params.free[k] === undefined);
+  // the same order the engine draws in: blocks missing from params.stack (an
+  // older link, a block added later such as Info 2) come after it
+  const order = [...params.stack, ...STACK_KEYS.filter((k) => !params.stack.includes(k))];
+  return order.filter((k) => layout.blocks[k] && params.free[k] === undefined);
 }
 function overStack(x: number, y: number): boolean {
   const r = layout.stackRect;
@@ -1668,9 +1685,51 @@ function othersRect(key: StackKey): Rect | null {
 function gapTo(y0: number, y1: number, r: Rect): number {
   return Math.max(0, r.y - y1, y0 - (r.y + r.h));
 }
+/**
+ * Put the stack so its top edge is at `top` given its height `h`, whichever
+ * side it is anchored on. Used whenever a block joins or leaves at one end,
+ * so the blocks that stay do not move: if they did, the distance the
+ * attach/detach test measures would jump and the block would flicker in and
+ * out of the stack.
+ */
+function pinStack(top: number, h: number) {
+  params.stackY = clamp((params.stackAnchor === "top" ? top : top + h) / canvas.height, 0, 1);
+}
+/** Where `cy` falls among the stacked blocks other than `key`: above them all, below them all, or between. */
+function sideOf(key: StackKey, cy: number): "above" | "below" | "between" {
+  const centres = stackedKeys()
+    .filter((o) => o !== key)
+    .map((o) => layout.blocks[o]!.y + layout.blocks[o]!.h / 2);
+  if (centres.every((c) => cy < c)) return "above";
+  if (centres.every((c) => cy >= c)) return "below";
+  return "between";
+}
+/**
+ * A free block brought up against another free block sits at the stack's
+ * gap from it (both stay free). The nearest one wins.
+ */
+function magnet(key: StackKey, cyB: number, k: number) {
+  const me = layout.blocks[key]!;
+  const gap = LABEL_GAP * scene.S;
+  let best: Rect | null = null;
+  let bestD = (DETACH / 2) * k;
+  for (const o of STACK_KEYS) {
+    const ro = layout.blocks[o];
+    if (o === key || params.free[o] === undefined || !ro) continue;
+    const d = gapTo(cyB - me.h / 2, cyB + me.h / 2, ro);
+    if (d < bestD) {
+      bestD = d;
+      best = ro;
+    }
+  }
+  if (!best) return;
+  const above = cyB < best.y + best.h / 2;
+  params.free[key] = clamp((above ? best.y - gap - me.h / 2 : best.y + best.h + gap + me.h / 2) / canvas.height, 0, 1);
+}
 function dragBlock(py: number, k: number) {
   const key = dragKey!;
   const H = canvas.height;
+  const gap = LABEL_GAP * scene.S;
   const cyB = py - grabDY;
   const me = layout.blocks[key]!;
   const y0 = cyB - me.h / 2;
@@ -1680,7 +1739,7 @@ function dragBlock(py: number, k: number) {
     // nothing else in the stack: this block is the stack, so dragging it
     // moves the stack itself (keeps it a stack for others to snap into)
     delete params.free[key];
-    params.stackY = clamp((params.stackAnchor === "top" ? y0 : y1) / H, 0, 1);
+    pinStack(y0, me.h);
     // a free block it is brought up against joins it, staying where it is
     for (const o of STACK_KEYS) {
       const ro = layout.blocks[o];
@@ -1688,9 +1747,8 @@ function dragBlock(py: number, k: number) {
       if (gapTo(y0, y1, ro) < (DETACH / 2) * k) {
         delete params.free[o];
         const above = cyB < ro.y + ro.h / 2;
-        params.stackAnchor = above ? "bottom" : "top";
-        params.stackY = clamp((above ? ro.y + ro.h : ro.y) / H, 0, 1);
-        reorderTo(key, cyB);
+        pinStack(above ? ro.y - gap - me.h : ro.y, me.h + gap + ro.h);
+        params.stack = [...(above ? [key, o] : [o, key]), ...params.stack.filter((s) => s !== key && s !== o)];
         break;
       }
     }
@@ -1698,13 +1756,20 @@ function dragBlock(py: number, k: number) {
     params.free[key] = clamp(cyB / H, 0, 1);
     // back against the stack: snap in at the row under the pointer
     if (gapTo(y0, y1, sr) < (DETACH / 2) * k) {
+      const side = sideOf(key, cyB);
       delete params.free[key];
       reorderTo(key, cyB);
-    }
+      // joining at an end: the others keep their place, the stack grows towards the block
+      if (side === "above") pinStack(sr.y - gap - me.h, sr.h + gap + me.h);
+      else if (side === "below") pinStack(sr.y, sr.h + gap + me.h);
+    } else magnet(key, cyB, k);
   } else {
     // pulled clear of the other blocks: detach and sit at its own height
-    if (gapTo(y0, y1, sr) > DETACH * k) params.free[key] = clamp(cyB / H, 0, 1);
-    else reorderTo(key, cyB);
+    if (gapTo(y0, y1, sr) > DETACH * k) {
+      params.free[key] = clamp(cyB / H, 0, 1);
+      // the others keep their place when an end block leaves
+      if (me.y < sr.y || me.y + me.h > sr.y + sr.h) pinStack(sr.y, sr.h);
+    } else reorderTo(key, cyB);
   }
   schedule();
 }
@@ -1782,7 +1847,13 @@ canvas.addEventListener("pointermove", (e) => {
     dragBlock(pt.y, pt.k);
     return;
   } else if (drag === "stack") {
-    params.stackY = clamp(params.stackY + dy / canvas.height, 0, 1);
+    // keep the edge inside the range the stack can actually reach, so a drag
+    // against the card's edge does not build up a dead zone on the way back
+    const sh = layout.stackRect?.h ?? 0;
+    const H = canvas.height;
+    const lo = params.stackAnchor === "top" ? 0 : Math.min(1, sh / H);
+    const hi = params.stackAnchor === "top" ? Math.max(0, 1 - sh / H) : 1;
+    params.stackY = clamp(params.stackY + dy / H, lo, hi);
     schedule();
     return;
   } else if (drag === "falloff") {
@@ -2093,6 +2164,12 @@ function applySettings(str: string): boolean {
     params.infoSize = obj.infoSize;
     applied++;
   }
+  for (const k of ["info2Size", "info3Size", "info4Size"] as const) {
+    if (obj[k] === "s" || obj[k] === "m" || obj[k] === "") {
+      params[k] = obj[k];
+      applied++;
+    }
+  }
   if (typeof obj.preset === "number" && obj.preset >= 1 && obj.preset <= 4) {
     params.preset = Math.round(obj.preset);
     applied++;
@@ -2310,7 +2387,7 @@ function syncUI() {
   setLoopsUI(String(params.loops));
   syncLayoutUI();
   syncVisibility();
-  infoSizeBtn.textContent = params.infoSize.toUpperCase();
+  syncInfoSizes();
   artist2El.value = params.artist2;
   for (const key of INFO_KEYS) {
     infoEls[key].value = params[key];
