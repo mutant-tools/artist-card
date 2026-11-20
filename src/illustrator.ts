@@ -11,6 +11,24 @@ import { bleedFor, extendToBleed } from "./indesign";
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const num = (n: number) => (Math.round(n * 100) / 100).toString();
 
+function svgViewBoxWidth(svg: string): number {
+  const vb = /viewBox="([^"]+)"/.exec(svg);
+  return vb ? parseFloat(vb[1].split(/\s+/)[2]) : 1080;
+}
+/** The paths of an SVG as path elements, black ink in `ink`. */
+function svgPaths(svg: string, ink: string): string[] {
+  const paths: string[] = [];
+  for (const m of svg.matchAll(/<path\s+([^>]*)\/>/g)) {
+    const attrs = m[1];
+    const d = /(?:^|\s)d="([^"]*)"/.exec(attrs)?.[1];
+    let fill = /fill="([^"]*)"/.exec(attrs)?.[1] || "black";
+    if (!d || fill === "none") continue;
+    if (fill === "black") fill = ink;
+    paths.push(`<path d="${d}" fill="${fill}"/>`);
+  }
+  return paths;
+}
+
 export function buildIllustratorSvg(spec: IdmlSpec): { svg: string; name: string } {
   const W = spec.w;
   const H = spec.h;
@@ -67,9 +85,13 @@ export function buildIllustratorSvg(spec: IdmlSpec): { svg: string; name: string
     for (const b of r.blocks) {
       parts.push(`<g id="${esc(b.text)}">`);
       parts.push(`<rect x="${num(x)}" y="${num(r.top)}" width="${num(b.w)}" height="${num(b.h)}" fill="${spec.colors.bg}"/>`);
-      parts.push(
-        `<text x="${num(x + b.padX)}" y="${num(r.top + b.padTop + b.capH)}" font-family="'Avantt-Bold', '${esc(spec.font.family)}'" font-weight="${LABEL_WEIGHT}" font-size="${num(b.fs)}" letter-spacing="${num(b.tracking * b.fs)}" style="letter-spacing:${num(b.tracking * b.fs)}px" fill="${spec.colors.text}" xml:space="preserve">${esc(b.text)}</text>`,
-      );
+      if (b.icon) {
+        // the icon's paths where the text would stand, in the text colour
+        parts.push(`<g transform="translate(${num(x + b.padX)} ${num(r.top + b.padTop)}) scale(${num(b.icon.w / svgViewBoxWidth(b.icon.svg))})">${svgPaths(b.icon.svg, spec.colors.text).join("")}</g>`);
+      } else
+        parts.push(
+          `<text x="${num(x + b.padX)}" y="${num(r.top + b.padTop + b.capH)}" font-family="'Avantt-Bold', '${esc(spec.font.family)}'" font-weight="${LABEL_WEIGHT}" font-size="${num(b.fs)}" letter-spacing="${num(b.tracking * b.fs)}" style="letter-spacing:${num(b.tracking * b.fs)}px" fill="${spec.colors.text}" xml:space="preserve">${esc(b.text)}</text>`,
+        );
       parts.push(`</g>`);
       x += b.w + spec.gap;
     }

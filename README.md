@@ -148,6 +148,18 @@ pointer is over the row.
   or 1080x1920. Without a photo the PNG is transparent.
 - **Export Figma** the frame shown in the preview, for the Figma plugin
   (see Figma below).
+- **Info +** adds up to three more info blocks (Info 2 to 4), each its own
+  block in the stack, draggable like the others; the minus takes one away and
+  the ones after it move up. The S/M size applies to all of them.
+- **Lockup Icon** the TMB icon as a block, sized and padded like the small
+  text blocks and in their colours. **Pos** puts it in a corner of the card
+  (LT, RT, LB, RB, flush with the edges) or Inline, where it is a block in
+  the stack (on top by default, draggable) or tops the artist group in the
+  reveal. Exports carry it as a block with the icon's vector.
+- **Cmd+A** in a field selects that field's text (also inside the Figma plugin).
+- **Export MP4 inside the Figma plugin** cannot encode there (the plugin
+  window is no secure context, so WebCodecs is missing): the card is saved
+  as a .touquet and the tool opens in the browser, where the MP4 is made.
 - **Undo / redo** Cmd+Z and Cmd+Shift+Z step through every setting change
   (a slider drag or a typed word is one step); photos, video and music are
   not part of the history. Inside a text field Cmd+Z is the field's own undo.

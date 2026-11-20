@@ -173,6 +173,24 @@ async function build(spec) {
     f.paddingRight = b.padX;
     f.paddingTop = b.padTop;
     f.paddingBottom = b.padBottom;
+    if (b.icon && b.icon.svg) {
+      // the TMB icon where the text would stand, in the text colour
+      const g = figma.createNodeFromSvg(b.icon.svg);
+      const v = g.children.length === 1 ? g.children[0] : figma.flatten([g]);
+      if (v !== g) {
+        f.appendChild(v);
+        if (g.parent) g.remove();
+      } else f.appendChild(g);
+      const node = v !== g ? v : g;
+      node.name = "TMB";
+      node.resize(b.icon.w, b.icon.h);
+      try {
+        node.fills = [{ type: "SOLID", color: textFill }];
+      } catch (e) {
+        // a group: leave the artwork's own fill
+      }
+      return f;
+    }
     const t = figma.createText();
     t.fontName = font;
     t.fontSize = b.fs;
@@ -225,7 +243,12 @@ async function build(spec) {
     while (i < free.length && free[i].key === key) group.push(free[i++]);
     const s = stackFrame(key);
     for (const r of group) s.appendChild(row(r));
-    place(s, (W - s.width) / 2, group[0].top, { horizontal: "CENTER", vertical: "MIN" });
+    // centred on the row's centre (the card's middle, or a corner for the icon block)
+    const cx = group[0].cx + group[0].shift;
+    const atLeft = cx < W / 3;
+    const atRight = cx > (2 * W) / 3;
+    const atBottom = group[0].top > H / 2;
+    place(s, cx - s.width / 2, group[0].top, { horizontal: atLeft ? "MIN" : atRight ? "MAX" : "CENTER", vertical: atBottom ? "MAX" : "MIN" });
   }
   return card;
 }

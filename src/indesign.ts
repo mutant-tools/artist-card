@@ -299,6 +299,26 @@ export function buildIdml(spec: IdmlSpec): { files: Record<string, Uint8Array>; 
   for (const r of spec.rows) {
     let x = r.cx + r.shift - r.w / 2;
     for (const b of r.blocks) {
+      if (b.icon) {
+        // the block as a rectangle, the icon's paths in the text colour on it
+        const vb = /viewBox="([^"]+)"/.exec(b.icon.svg);
+        const vbw = vb ? parseFloat(vb[1].split(/\s+/)[2]) : 72;
+        const s = b.icon.w / vbw;
+        const parts: string[] = [
+          `<Rectangle Self="${nextId()}" ContentType="Unassigned" ${ITEM_COMMON.replace('Name="$ID/"', 'Name="Block"')} FillColor="${bg}" StrokeColor="Swatch/None" StrokeWeight="0" ItemTransform="1 0 0 1 ${num(ox + x)} ${num(oy + r.top)}">${rectGeometry(0, 0, b.w, b.h)}</Rectangle>`,
+        ];
+        for (const m of b.icon.svg.matchAll(/<path\s+([^>]*)\/>/g)) {
+          const d = /(?:^|\s)d="([^"]*)"/.exec(m[1])?.[1];
+          const subs = d ? parseSvgPath(d) : [];
+          if (!subs.length) continue;
+          parts.push(
+            `<Polygon Self="${nextId()}" ContentType="Unassigned" ${ITEM_COMMON} FillColor="${fg}" StrokeColor="Swatch/None" StrokeWeight="0" ItemTransform="1 0 0 1 ${num(ox + x + b.padX)} ${num(oy + r.top + b.padTop)}">${pathGeometry(subs, (p) => ({ x: p.x * s, y: p.y * s }))}</Polygon>`,
+          );
+        }
+        items.push(group(b.text, parts));
+        x += b.w + spec.gap;
+        continue;
+      }
       const fid = nextId();
       const sid = nextId();
       items.push(

@@ -128,6 +128,7 @@ html, body {
 .with-btn > textarea { flex: 1 1 0; min-width: 0; }
 /* a field with a button after it keeps its text on the row's centre line */
 .with-btn > textarea { padding-left: 29px; }
+.with-btn.two > textarea { padding-left: 52px; }
 textarea {
   height: var(--control);
   padding: 12px 6px 0;

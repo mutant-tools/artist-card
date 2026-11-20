@@ -26,6 +26,10 @@ import {
   type LogoPos,
   type LogoStyle,
   LOGO_STYLES,
+  ICON_POSITIONS,
+  INFO_KEYS,
+  isInfoKey,
+  type IconPos,
   contrastText,
   type Params,
   type Scene,
@@ -429,6 +433,11 @@ document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey) {
     if (e.altKey) return;
     const k = e.key.toLowerCase();
+    if (k === "a" && inField && (tag === "INPUT" || tag === "TEXTAREA")) {
+      e.preventDefault();
+      (t as HTMLInputElement | HTMLTextAreaElement).select();
+      return;
+    }
     if (k === "z") {
       if (inField) return; // the field's own undo
       e.preventDefault();
@@ -617,12 +626,17 @@ function applyPreset(n: number) {
 }
 const logoColorRow = $<HTMLDivElement>("logoColorRow");
 const logoStyleRow = $<HTMLDivElement>("logoStyleRow");
+const logoPosRow = $<HTMLDivElement>("logoPosRow");
 function syncLayoutUI() {
-  logoColorRow.hidden = params.logo === "off";
-  logoStyleRow.hidden = params.logo === "off";
+  const off = params.logo === "off";
+  const icon = params.logoStyle === "icon";
+  logoColorRow.hidden = off || icon; // the icon takes the text blocks' colours
+  logoStyleRow.hidden = off;
+  logoPosRow.hidden = off || !icon;
   setLogoUI(params.logo);
   setLogoColorUI(params.logoColor);
   setLogoStyleUI(params.logoStyle);
+  setIconPosUI(params.iconPos);
 }
 const setPresetUI = bindSeg<string>("layoutSeg", "preset", (v) => applyPreset(Number(v)));
 const setLogoUI = bindSeg<LogoPos>("logoSeg", "logo", (v) => {
@@ -644,7 +658,12 @@ const setLogoColorUI = bindSeg<LogoColor>("logoColorSeg", "logocolor", (v) => {
 });
 const setLogoStyleUI = bindSeg<LogoStyle>("logoStyleSeg", "logostyle", (v) => {
   params.logoStyle = v;
-  schedule();
+  syncLayoutUI();
+  rebuild(); // the inline icon is a block on the entrance clock
+});
+const setIconPosUI = bindSeg<IconPos>("iconPosSeg", "iconpos", (v) => {
+  params.iconPos = v;
+  rebuild();
 });
 function applyFormat() {
   const [W, H] = FORMATS[params.format];
@@ -883,6 +902,9 @@ const HIDDEN_STEPS: Record<LayoutKind, NumKey[]> = {
 const TEXT_ROWS: Record<string, number[]> = {
   titleRow: [2, 4],
   infoRow: [2, 4],
+  info2Row: [2, 4],
+  info3Row: [2, 4],
+  info4Row: [2, 4],
   dayRow: [1, 3],
   timeRow: [1, 3],
   artistRow: [1, 3],
@@ -898,6 +920,7 @@ function syncVisibility() {
   for (const [id, presets] of Object.entries(TEXT_ROWS)) $<HTMLElement>(id).hidden = !presets.includes(params.preset);
   if (!TEXT_ROWS.artistRow.includes(params.preset)) artist2Row.hidden = true;
   else artist2Row.hidden = !artist2Shown;
+  syncInfoRows();
   // a group with nothing left in it goes too
   for (const id of ["timingGroup", "rowsGroup", "shapeGroup", "blocksGroup", "floatGroup"]) {
     const g = $<HTMLElement>(id);
@@ -937,6 +960,47 @@ const artistEl = bindText("artistText", (v) => (params.artist = v));
 const stageTextEl = bindText("stageText", (v) => (params.stage = v));
 const artist2El = bindText("artist2Text", (v) => (params.artist2 = v));
 const infoEl = bindText("infoText", (v) => (params.info = v));
+const infoEls: Record<(typeof INFO_KEYS)[number], HTMLInputElement> = {
+  info: infoEl,
+  info2: bindText("info2Text", (v) => (params.info2 = v)),
+  info3: bindText("info3Text", (v) => (params.info3 = v)),
+  info4: bindText("info4Text", (v) => (params.info4 = v)),
+};
+const infoAddBtn = $<HTMLButtonElement>("infoAddBtn");
+let infoShown = 1; // how many info rows are open (the first always is)
+/** The extra info rows: open ones follow the Info row, + on the last open one. */
+function syncInfoRows() {
+  const inPreset = TEXT_ROWS.infoRow.includes(params.preset);
+  for (let i = 1; i < INFO_KEYS.length; i++) {
+    if (params[INFO_KEYS[i]]) infoShown = Math.max(infoShown, i + 1);
+    $<HTMLElement>(`${INFO_KEYS[i]}Row`).hidden = !inPreset || i >= infoShown;
+  }
+  infoAddBtn.hidden = infoShown >= INFO_KEYS.length;
+}
+infoAddBtn.addEventListener("click", () => {
+  if (infoShown >= INFO_KEYS.length) return;
+  infoShown++;
+  syncInfoRows();
+  infoEls[INFO_KEYS[infoShown - 1]].focus();
+});
+/** Take one info row away: the ones after it move up. */
+function removeInfo(key: (typeof INFO_KEYS)[number]) {
+  const i = INFO_KEYS.indexOf(key);
+  for (let j = Math.max(1, i); j < INFO_KEYS.length; j++) {
+    const next = INFO_KEYS[j + 1];
+    params[INFO_KEYS[j]] = next ? params[next] : "";
+    delete params.free[INFO_KEYS[j]];
+    infoEls[INFO_KEYS[j]].value = params[INFO_KEYS[j]];
+    autosize(infoEls[INFO_KEYS[j]]);
+  }
+  if (i === 0) {
+    infoEl.value = params.info = "";
+    autosize(infoEl);
+  } else infoShown = Math.max(1, infoShown - 1);
+  syncInfoRows();
+  rebuild();
+}
+for (const key of INFO_KEYS.slice(1)) $<HTMLButtonElement>(`${key}RemoveBtn`).addEventListener("click", () => removeInfo(key));
 const infoSizeBtn = $<HTMLButtonElement>("infoSizeBtn");
 infoSizeBtn.addEventListener("click", () => {
   params.infoSize = params.infoSize === "s" ? "m" : "s";
@@ -967,8 +1031,8 @@ $<HTMLButtonElement>("artist2RemoveBtn").addEventListener("click", () => {
   rebuild();
 });
 // text changes can change the block count, which sets the loop length
-for (const el of [titleEl, dayEl, timeStartEl, timeEndEl, artistEl, stageTextEl, artist2El, infoEl]) el.addEventListener("input", () => rebuild());
-for (const el of [titleEl, infoEl, artistEl, artist2El]) el.addEventListener("input", () => autosize(el));
+for (const el of [titleEl, dayEl, timeStartEl, timeEndEl, artistEl, stageTextEl, artist2El, ...Object.values(infoEls)]) el.addEventListener("input", () => rebuild());
+for (const el of [titleEl, artistEl, artist2El, ...Object.values(infoEls)]) el.addEventListener("input", () => autosize(el));
 document.fonts.addEventListener("loadingdone", () => schedule());
 
 // ---------- colours ----------
@@ -1391,6 +1455,29 @@ async function blobEntry(blob: Blob | null, name: string): Promise<{ name: strin
  * Save as a .touquet: the browser's own save dialog where there is one
  * (Chrome, Edge), elsewhere a prompt for the name and a download.
  */
+/** The whole card as the .touquet document: settings, photo or video, music. */
+async function touquetDoc(name: string) {
+  let photo = imageFile;
+  if (!photo && image && !video) {
+    // a preset photo: fetch it as it is served
+    try {
+      photo = await (await fetch(presetPhoto(params.preset))).blob();
+    } catch {
+      photo = null;
+    }
+  }
+  return {
+    v: 1,
+    app: "touquet-artist-card",
+    name,
+    params,
+    image: video ? null : await blobEntry(photo, "photo"),
+    video: video ? await blobEntry(video.file, video.file.name) : null,
+    videoStart,
+    audio: audio ? { name: audio.name, type: "audio/mpeg", data: bytesToBase64(new Uint8Array(audio.bytes)) } : null,
+    audioStart,
+  };
+}
 async function saveTouquet() {
   const suggested = docName || PRESET_NAMES[params.preset] || "card";
   const picker = (window as unknown as SaveFilePickerWindow).showSaveFilePicker;
@@ -1414,26 +1501,7 @@ async function saveTouquet() {
     name = typed.trim().replace(/\.touquet$/i, "") || suggested;
   }
   docName = name;
-  let photo = imageFile;
-  if (!photo && image && !video) {
-    // a preset photo: fetch it as it is served
-    try {
-      photo = await (await fetch(presetPhoto(params.preset))).blob();
-    } catch {
-      photo = null;
-    }
-  }
-  const doc = {
-    v: 1,
-    app: "touquet-artist-card",
-    name,
-    params,
-    image: video ? null : await blobEntry(photo, "photo"),
-    video: video ? await blobEntry(video.file, video.file.name) : null,
-    videoStart,
-    audio: audio ? { name: audio.name, type: "audio/mpeg", data: bytesToBase64(new Uint8Array(audio.bytes)) } : null,
-    audioStart,
-  };
+  const doc = await touquetDoc(name);
   const blob = new Blob([JSON.stringify(doc)], { type: "application/json" });
   if (handle) {
     const w = await handle.createWritable();
@@ -1446,6 +1514,52 @@ async function saveTouquet() {
   a.download = `${name.replace(/[/\\:]/g, "-")}.touquet`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+/**
+ * Figma's plugin window has no video encoder (its sandbox leaves the page
+ * without a secure context): save the card and open the tool in the
+ * browser, where the MP4 is made. A browser that gives us the new window
+ * gets the card posted straight into it.
+ */
+const SITE_URL = "https://typograaf.github.io/artist-card/";
+async function exportInBrowser() {
+  const doc = await touquetDoc(docName || PRESET_NAMES[params.preset] || "card");
+  const name = `${doc.name.replace(/[/\\:]/g, "-")}.touquet`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(doc)], { type: "application/json" }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  const h = serializeHash();
+  const win = window.open(h ? `${SITE_URL}#${h}` : SITE_URL, "_blank");
+  if (win) {
+    // the tool in that window asks for the card once it is ready
+    const give = (e: MessageEvent) => {
+      if (e.source === win && e.data?.type === "artist-card-ready") {
+        win.postMessage({ type: "artist-card-open", doc }, "*");
+        window.removeEventListener("message", give);
+      }
+    };
+    window.addEventListener("message", give);
+  }
+  alert(
+    `Figma's plugin window cannot encode video, so the MP4 is made in your browser.\n\nThe card was saved as "${name}"` +
+      (win ? " and the tool opened in a new window: drop the file on the preview there if it has not loaded, then press Export MP4." : `. Open ${SITE_URL} in your browser, drop the file on the preview and press Export MP4.`),
+  );
+}
+// a card handed over by the plugin window (see exportInBrowser)
+if (window.opener) {
+  window.addEventListener("message", (e) => {
+    const d = e.data;
+    if (d?.type === "artist-card-open" && d.doc && typeof d.doc === "object") {
+      void loadTouquetFile(new File([JSON.stringify(d.doc)], `${d.doc.name || "card"}.touquet`, { type: "application/json" }));
+    }
+  });
+  try {
+    (window.opener as Window).postMessage({ type: "artist-card-ready" }, "*");
+  } catch {
+    // an opener from another app
+  }
 }
 async function loadTouquetFile(file: File) {
   let doc: {
@@ -1603,7 +1717,10 @@ function clearBlock(key: StackKey) {
     artist2El.value = params.artist2 = "";
     showArtist2(false);
   } else if (key === "stage") stageTextEl.value = params.stage = "";
-  else if (key === "info") infoEl.value = params.info = "";
+  else if (key === "icon") {
+    params.logo = "off";
+    syncLayoutUI();
+  } else if (isInfoKey(key)) removeInfo(key);
   delete params.free[key];
   drag = "none";
   dragKey = null;
@@ -1988,6 +2105,10 @@ function applySettings(str: string): boolean {
     params.logoStyle = obj.logoStyle as LogoStyle;
     applied++;
   }
+  if (typeof obj.iconPos === "string" && (ICON_POSITIONS as string[]).includes(obj.iconPos)) {
+    params.iconPos = obj.iconPos as IconPos;
+    applied++;
+  }
   if (obj.blockColor === "" || obj.blockColor === "topA" || obj.blockColor === "topB" || obj.blockColor === "bottomA" || obj.blockColor === "bottomB") {
     params.blockColor = obj.blockColor;
     applied++;
@@ -2002,7 +2123,9 @@ function applySettings(str: string): boolean {
   }
   if (Array.isArray(obj.stack)) {
     const keys = (obj.stack as unknown[]).filter((k): k is StackKey => typeof k === "string" && (STACK_KEYS as string[]).includes(k));
-    params.stack = [...new Set(keys), ...STACK_KEYS.filter((k) => !keys.includes(k))];
+    // keys the list does not know go where the defaults put them: the icon on top, the rest below
+    const missing = STACK_KEYS.filter((k) => !keys.includes(k));
+    params.stack = [...missing.filter((k) => k === "icon"), ...new Set(keys), ...missing.filter((k) => k !== "icon")];
     applied++;
   }
   if (obj.free && typeof obj.free === "object" && !Array.isArray(obj.free)) {
@@ -2021,7 +2144,7 @@ function applySettings(str: string): boolean {
     params.stackY = clamp(obj.stackY, 0, 1);
     applied++;
   }
-  for (const k of ["title", "day", "timeStart", "timeEnd", "artist", "stage", "artist2", "info"] as const) {
+  for (const k of ["title", "day", "timeStart", "timeEnd", "artist", "stage", "artist2", ...INFO_KEYS] as const) {
     if (typeof obj[k] === "string") {
       params[k] = (obj[k] as string).slice(0, 200);
       applied++;
@@ -2189,8 +2312,12 @@ function syncUI() {
   syncVisibility();
   infoSizeBtn.textContent = params.infoSize.toUpperCase();
   artist2El.value = params.artist2;
-  infoEl.value = params.info;
-  autosize(infoEl);
+  for (const key of INFO_KEYS) {
+    infoEls[key].value = params[key];
+    autosize(infoEls[key]);
+  }
+  infoShown = 1;
+  syncInfoRows();
   showArtist2(!!params.artist2 || artist2Shown);
   for (const def of stepDefs) syncStep(def.key);
   titleEl.value = params.title;
@@ -2226,7 +2353,8 @@ exportPngBtn.addEventListener("click", async () => {
 });
 exportMp4Btn.addEventListener("click", async () => {
   if (!supportsVideoExport()) {
-    alert("Video export needs WebCodecs (Chrome, Edge or Safari 16.4+).");
+    if (IN_PLUGIN) await exportInBrowser();
+    else alert("Video export needs WebCodecs (Chrome, Edge or Safari 16.4+).");
     return;
   }
   const wasPlaying = playing;
@@ -2423,7 +2551,8 @@ void Promise.all([
   loadLogo("basic", `${import.meta.env.BASE_URL}logo-basic.svg`),
   loadLogo("10years", `${import.meta.env.BASE_URL}logo-10years.svg`),
   loadLogo("full", `${import.meta.env.BASE_URL}logo-full.svg`),
-]).then(() => schedule());
+  loadLogo("icon", `${import.meta.env.BASE_URL}logo-icon.svg`),
+]).then(() => rebuild());
 syncUI();
 if (!readHash()) rebuild();
 // the photo that belongs to the preset in the link (the default one for the reveal)

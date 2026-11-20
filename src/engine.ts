@@ -16,13 +16,19 @@ export type StaggerOrder = "center" | "top" | "bottom";
 export type LayoutKind = "reveal" | "none" | "row" | "side" | "full";
 export type StackAnchor = "top" | "bottom";
 export type InfoSize = "s" | "m";
-export type StackKey = "title" | "day" | "time" | "artist" | "stage" | "info";
-export const STACK_KEYS: StackKey[] = ["title", "day", "time", "artist", "stage", "info"];
+export type StackKey = "icon" | "title" | "day" | "time" | "artist" | "stage" | "info" | "info2" | "info3" | "info4";
+export const STACK_KEYS: StackKey[] = ["icon", "title", "day", "time", "artist", "stage", "info", "info2", "info3", "info4"];
+/** The info sentence and the extra ones added with +. */
+export const INFO_KEYS = ["info", "info2", "info3", "info4"] as const;
+export type InfoKey = (typeof INFO_KEYS)[number];
 export type LogoPos = "off" | "top" | "bottom";
 export type LogoColor = "black" | "white";
-export type LogoStyle = "basic" | "10years" | "full";
+export type LogoStyle = "basic" | "10years" | "full" | "icon";
+/** Where the TMB icon block sits: a corner of the card, or inline with the text blocks. */
+export type IconPos = "lt" | "rt" | "lb" | "rb" | "inline";
 const wordsOf = (t: string) => t.trim().split(/\s+/).filter(Boolean).length;
-export const LOGO_STYLES: LogoStyle[] = ["basic", "10years", "full"];
+export const LOGO_STYLES: LogoStyle[] = ["basic", "10years", "full", "icon"];
+export const ICON_POSITIONS: IconPos[] = ["lt", "rt", "lb", "rb", "inline"];
 export type BlockColor = "" | "topA" | "topB" | "bottomA" | "bottomB";
 /** The text blocks' colours: the design's yellow and black, or one of the strip colours with whichever of black / white reads better on it. */
 export function labelColors(p: Params): { bg: string; text: string } {
@@ -95,6 +101,9 @@ export interface Params {
   title: string; // a big title line for posters that are not about an artist (Infos Pratiques, App TMB26)
   artist2: string; // second artist (B2B); empty = none
   info: string; // the small sentence block
+  info2: string; // more sentence blocks, added with +
+  info3: string;
+  info4: string;
   layout: LayoutKind;
   stack: StackKey[]; // one-stage layouts: the order of the block rows in the centred stack
   free: Partial<Record<StackKey, number>>; // blocks dragged out of the stack: their centre as a fraction of H (always centred in x)
@@ -104,7 +113,8 @@ export interface Params {
   preset: number; // the example last applied (1..4); 2..4 bring their own photo
   logo: LogoPos;
   logoColor: LogoColor;
-  logoStyle: LogoStyle; // which Touquet lockup
+  logoStyle: LogoStyle; // which Touquet lockup; "icon" is the TMB block
+  iconPos: IconPos; // where the icon block sits
   blockColor: BlockColor; // the text blocks' fill: the design's yellow or one of the four strip colours
   loops: number; // how many loops the MP4 export holds (1, 2 or 4), for longer music
   unitPx: number; // the stripe unit in px at 1080 (45 in the reveal, 24 for the side blocks)
@@ -172,8 +182,11 @@ export const DEFAULT_PARAMS: Params = {
   title: "",
   artist2: "",
   info: "",
+  info2: "",
+  info3: "",
+  info4: "",
   layout: "reveal",
-  stack: ["title", "day", "time", "artist", "stage", "info"],
+  stack: ["icon", "title", "day", "time", "artist", "stage", "info", "info2", "info3", "info4"],
   free: {},
   stackY: (1350 - 103) / 1350,
   stackAnchor: "bottom",
@@ -182,6 +195,7 @@ export const DEFAULT_PARAMS: Params = {
   logo: "off",
   logoColor: "black",
   logoStyle: "basic",
+  iconPos: "inline",
   blockColor: "",
   loops: 1,
   unitPx: 45,
@@ -280,9 +294,20 @@ export function stackBlockCount(p: Params): number {
     else if (key === "time") n += timeLabel(p) ? 1 : 0;
     else if (key === "artist") n += wordsOf(p.artist) + (p.artist.trim() && p.artist2.trim() ? 1 + wordsOf(p.artist2) : 0);
     else if (key === "stage") n += wordsOf(p.stage);
-    else if (key === "info") n += p.info.split(/\n/).filter((l) => l.trim()).length;
+    else if (key === "icon") n += iconInline(p) ? 1 : 0;
+    else if (isInfoKey(key)) n += p[key].split(/\n/).filter((l) => l.trim()).length;
   }
   return n;
+}
+export function isInfoKey(key: string): key is InfoKey {
+  return (INFO_KEYS as readonly string[]).includes(key);
+}
+/** The icon block is on (Logo not off, Lockup = Icon). */
+export function iconOn(p: Params): boolean {
+  return p.logo !== "off" && p.logoStyle === "icon";
+}
+function iconInline(p: Params): boolean {
+  return iconOn(p) && p.iconPos === "inline";
 }
 
 /** 1-based index of the colourway matching the stripe colours, or 0 when custom. */
@@ -956,6 +981,7 @@ export interface SpecBlock {
   padBottom: number;
   capH: number;
   tracking: number; // em
+  icon?: { svg: string; w: number; h: number }; // the TMB icon instead of text: the artwork and its ink size
 }
 export interface SpecRow {
   key: string; // stack key, or "seam" / "artist" in the reveal
@@ -1080,6 +1106,7 @@ interface Block {
   padTop: number;
   capH: number;
   tracking: number;
+  icon?: { w: number; h: number }; // the TMB icon instead of text: its ink size
 }
 interface LabelRow {
   blocks: Block[];
@@ -1125,6 +1152,25 @@ function measureBlocks(ctx: CanvasRenderingContext2D, texts: string[], style: La
     capH,
     tracking: style.tracking,
   }));
+}
+
+/**
+ * The TMB icon as one block: the artwork stands where the text would, cap
+ * height tall, in a block with the small blocks' padding (the Day block).
+ */
+function iconRow(ctx: CanvasRenderingContext2D, S: number, family: string): LabelRow | null {
+  const img = logoSet.icon;
+  if (!img) return null;
+  const style = STYLE_TINY;
+  const fs = style.fs * S;
+  ctx.font = labelFont(fs, family);
+  setTracking(ctx, fs, 0);
+  const capH = ctx.measureText("H").actualBoundingBoxAscent || fs * 0.7;
+  const padX = style.padX * S;
+  const padTop = style.padTop * S;
+  const padBottom = style.padBottom * S;
+  const iw = (capH * img.w) / img.h;
+  return rowOf([{ text: "TMB", w: iw + 2 * padX, h: padTop + capH + padBottom, fs, padX, padTop, capH, tracking: 0, icon: { w: iw, h: capH } }], 0);
 }
 
 function rowOf(blocks: Block[], gap: number, shift = 0): LabelRow {
@@ -1230,6 +1276,7 @@ function drawRow(
         padBottom: b.h - b.padTop - b.capH,
         capH: b.capH,
         tracking: b.tracking,
+        icon: b.icon && logoSet.icon ? { svg: logoSet.icon.svg, w: b.icon.w, h: b.icon.h } : undefined,
       })),
     });
   if (!labelsOn) return;
@@ -1258,7 +1305,10 @@ function drawRow(
       ctx.fillStyle = colors.labelBg;
       ctx.fillRect(bx, top, b.w, b.h);
       ctx.fillStyle = colors.labelText;
-      ctx.fillText(b.text, bx + b.padX, top + b.padTop + b.capH);
+      if (b.icon && logoSet.icon) {
+        const img = /^#f{6}$/i.test(colors.labelText) ? logoSet.icon.white : logoSet.icon.black;
+        ctx.drawImage(img, bx + b.padX, top + b.padTop, b.icon.w, b.icon.h);
+      } else ctx.fillText(b.text, bx + b.padX, top + b.padTop + b.capH);
       ctx.restore();
     }
     x += vw + gap;
@@ -1332,7 +1382,7 @@ export function getLogoImages(p?: Params): LogoImages | null {
  */
 export function logoRect(p: Params, scene: Scene, scale: number): Rect | null {
   logoImages = getLogoImages(p);
-  if (!logoImages || p.logo === "off") return null;
+  if (!logoImages || p.logo === "off" || p.logoStyle === "icon") return null;
   const W = scene.W * scale;
   const H = scene.H * scale;
   const S = scene.S * scale;
@@ -1484,6 +1534,18 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
   const dirOf = (base: number) => (i: number) => (rand(p.blockSeed, 900 + base + i) < 0.5 ? -1 : 1);
   const out: Layout = { artistRect: null, stackRect: null, blocks: {} };
 
+  // the icon block in a corner: flush with the card's edges, always there
+  if (iconOn(p) && p.iconPos !== "inline") {
+    const r = iconRow(ctx, S, fam);
+    if (r) {
+      const left = p.iconPos === "lt" || p.iconPos === "lb";
+      const atTop = p.iconPos === "lt" || p.iconPos === "rt";
+      specKey = "icon";
+      specStacked = false;
+      drawRow(ctx, r, left ? r.w / 2 : W - r.w / 2, atTop ? 0 : H - r.h, gap, () => 1, () => 1, 0, colors, fam);
+    }
+  }
+
   if (scene.layout === "reveal") {
     // Stage + day sit on the seam of the closed card and fold out as the
     // seam rows start opening; the artist group (times, name, B2B, stage)
@@ -1509,7 +1571,8 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
     const times = layoutRow(ctx, timeLabel(p) ? [timeLabel(p)] : [], STYLE_TINY, S, gap, maxW, fam);
     const nameRows = artistRows(ctx, p, S, gap, maxW, fam);
     const stage2 = layoutRow(ctx, words(p.stage, true), STYLE_SMALL, S, gap, maxW, fam);
-    const groupRows = [times, ...nameRows, stage2].filter((r): r is LabelRow => !!r);
+    const iconInl = iconInline(p) ? iconRow(ctx, S, fam) : null;
+    const groupRows = [iconInl, times, ...nameRows, stage2].filter((r): r is LabelRow => !!r);
     if (groupRows.length) {
       const gh = groupRows.reduce((a, r) => a + r.h, 0) + gap * (groupRows.length - 1);
       const gw = groupRows.reduce((a, r) => Math.max(a, r.w), 0);
@@ -1561,8 +1624,9 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
     else if (key === "artist") {
       rows = artistRows(ctx, p, S, gap, maxW, fam);
     } else if (key === "stage") rows = wrapRows(ctx, words(p.stage, hasArtist), hasArtist ? STYLE_SMALL : STYLE_BIG, S, gap, maxW, fam);
-    else if (key === "info")
-      rows = p.info
+    else if (key === "icon") rows = iconInline(p) ? [iconRow(ctx, S, fam)].filter((r): r is LabelRow => !!r) : [];
+    else if (isInfoKey(key))
+      rows = p[key]
         .split(/\n/)
         .map((line) => line.trim())
         .filter(Boolean)
