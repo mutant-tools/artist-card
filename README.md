@@ -120,6 +120,8 @@ Right column:
 - **Export MP4 / PNG**.
 - **Copy for Figma** the frame shown in the preview, for the Figma plugin
   (see Figma below).
+- **Export InDesign** the frame shown in the preview as an InDesign file
+  (see InDesign below).
 
 ## Figma
 
@@ -140,6 +142,21 @@ manifest, pick `figma-plugin/manifest.json`. Then either
   press **Send to Figma**; or
 - press **Copy for Figma** in the tool anywhere (the site, or the code layer
   in the Touquet file), run the plugin and press **Paste from clipboard**.
+
+
+## InDesign
+
+**Export InDesign** downloads a zip with a `.idml` (InDesign's open XML
+format, built on the TMB artist template's resources) and a `Links` folder
+holding the photo. Open the `.idml` in InDesign: the photo is a placed
+image, every stripe and floater a rectangle with its own swatch (grouped
+per row), the logo vector paths, every word its own text frame in Avantt
+Bold with the tracking. The block behind a word is paragraph shading
+measured from the baseline (cap height plus the padding up, padding down),
+and the frame auto-sizes, so the block follows the text when it is edited.
+Like InDesign itself, the other words in a row do not slide along. Only the
+frame shown in the preview is taken (set the time first). Avantt must be
+installed.
 
 ## Model
 

@@ -31,6 +31,7 @@ import {
 } from "./engine";
 import { exportMp4, exportPng, fontsReady, supportsVideoExport } from "./export";
 import { loadLogo } from "./logo";
+import { buildIdmlZip } from "./indesign";
 import { audioPackets, loadAudioFile, playAudio, stopAudio, windowPeaks, type AudioTrack } from "./audio";
 
 const FPS = 60; // frame counter, arrow-key stepping and MP4 export
@@ -1550,6 +1551,27 @@ function offerText(text: string) {
   ta.focus();
   ta.select();
 }
+// ---------- InDesign ----------
+const indesignBtn = $<HTMLButtonElement>("indesignBtn");
+indesignBtn.addEventListener("click", async () => {
+  indesignBtn.disabled = true;
+  try {
+    const spec = await figmaSpec();
+    const { bytes, name } = buildIdmlZip(spec);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([bytes as BlobPart], { type: "application/zip" }));
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    flash(indesignBtn, "Exported");
+  } catch (err) {
+    console.error("[indesign]", err);
+    alert("Could not build the InDesign file; check the console.");
+  } finally {
+    indesignBtn.disabled = false;
+  }
+});
+
 figmaBtn.addEventListener("click", async () => {
   figmaBtn.disabled = true;
   try {
@@ -1660,6 +1682,7 @@ declare global {
     artistCard: {
       params: Params;
       figmaSpec: () => Promise<unknown>;
+      indesignZip: () => Promise<{ bytes: Uint8Array; name: string }>;
       setTime: (t: number) => void;
       apply: (json: string) => boolean;
       loadImageUrl: (url: string) => Promise<void>;
@@ -1672,6 +1695,7 @@ declare global {
 window.artistCard = {
   params,
   figmaSpec,
+  indesignZip: async () => buildIdmlZip(await figmaSpec()),
   setTime: (t: number) => {
     setTime(t);
     draw();
