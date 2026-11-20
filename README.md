@@ -106,7 +106,11 @@ pointer is over the row.
   own stripes, grow, shrink to nothing and back, and drift; they trail the
   opening a beat behind the hole edge and are gone once a row is fully open
   (in the side and full layouts the rows are held open, so they simply live
-  in them).
+  in them). **Image floaters**, **size** and **travel** are the same kind of
+  block inside the photo or video: a slice of it pushed sideways (by up to
+  the travel; the floater itself drifts half that), under the stripes and
+  the block floaters, so the picture itself tears and moves. Exports carry
+  them in the photo.
 - **Colours** the 67 Touquet colourways, locked sets of four (top A / B,
   bottom A / B): the arrows step through them, the box shows the current
   number (type one to jump; `–` means custom colours). The fifth swatch

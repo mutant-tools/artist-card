@@ -533,7 +533,10 @@ type NumKey =
   | "blockSeed"
   | "floatCount"
   | "floatSize"
-  | "floatTravel";
+  | "floatTravel"
+  | "imageFloatCount"
+  | "imageFloatSize"
+  | "imageFloatTravel";
 
 interface StepDef {
   key: NumKey;
@@ -569,6 +572,9 @@ const stepDefs: StepDef[] = [
   { key: "floatCount", control: "slider", label: "Floaters", min: 0, max: 60, step: 1, decimals: 0, container: "floatGroup", title: "Floating blocks spread over the open rows; they grow, shrink to nothing and back, and drift" },
   { key: "floatSize", control: "slider", label: "Floaters size", min: 0.5, max: 8, step: 0.5, decimals: 1, container: "floatGroup", title: "Largest floating block in units (smallest is half)" },
   { key: "floatTravel", control: "slider", label: "Floaters travel", min: 0, max: 600, step: 10, decimals: 0, container: "floatGroup", title: "Largest sideways step of a floating block, px on the 1080 canvas" },
+  { key: "imageFloatCount", control: "slider", label: "Image floaters", min: 0, max: 60, step: 1, decimals: 0, container: "floatGroup", title: "Floating blocks inside the photo or video: slices of it pushed sideways; they grow, shrink to nothing and back, and drift like the block floaters" },
+  { key: "imageFloatSize", control: "slider", label: "Image floaters size", min: 0.5, max: 8, step: 0.5, decimals: 1, container: "floatGroup", title: "Largest image floater in units (smallest is half)" },
+  { key: "imageFloatTravel", control: "slider", label: "Image floaters travel", min: 0, max: 600, step: 10, decimals: 0, container: "floatGroup", title: "How far a slice is pushed sideways at most, px on the 1080 canvas; the floater itself drifts half that" },
 ];
 const numParams = params as unknown as Record<NumKey, number>;
 const stepInputs: Partial<Record<NumKey, HTMLInputElement>> = {};
@@ -721,8 +727,8 @@ for (const def of stepDefs) renderStep(def);
 const ONE_STAGE_OFF: NumKey[] = ["holdClosed", "duration", "holdOpen", "labelTime", "stagger"];
 const HIDDEN_STEPS: Record<LayoutKind, NumKey[]> = {
   reveal: ["stripPx", "loopLen"],
-  none: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "rowsTop", "rowsBottom", "stripPx", "irregularity", "shapeSeed", "unitPx", "blockWidth", "blockTravel", "blockSeed", "floatCount", "floatSize", "floatTravel"],
-  row: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "irregularity", "shapeSeed", "blockWidth", "floatCount", "floatSize", "floatTravel"],
+  none: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "rowsTop", "rowsBottom", "stripPx", "irregularity", "shapeSeed", "unitPx", "blockWidth", "blockTravel", "blockSeed", "floatCount", "floatSize", "floatTravel", "imageFloatCount", "imageFloatSize", "imageFloatTravel"],
+  row: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "irregularity", "shapeSeed", "blockWidth", "floatCount", "floatSize", "floatTravel", "imageFloatCount", "imageFloatSize", "imageFloatTravel"],
   side: [...ONE_STAGE_OFF, "stripPx"],
   full: [...ONE_STAGE_OFF, "stripPx"],
 };

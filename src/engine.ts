@@ -72,6 +72,9 @@ export interface Params {
   floatTravel: number; // px at 1x, largest floating-block sideways step
   floatMoveMin: number; // s, floating block keyframe spacing
   floatMoveMax: number;
+  imageFloatCount: number; // floating blocks inside the photo: slices of it pushed sideways (0 = none)
+  imageFloatSize: number; // units, largest image floater (smallest is half)
+  imageFloatTravel: number; // px at 1x, how far the slice is pushed at most
   opening: number; // 0..100, how far the rows open
   vignette: number; // 0..100, how much the hole follows the falloff circle (0 = straight opening)
   falloffX: number; // falloff circle centre, fraction of W (0.5 = centred)
@@ -139,6 +142,9 @@ export const DEFAULT_PARAMS: Params = {
   floatTravel: 100,
   floatMoveMin: 1,
   floatMoveMax: 2.5,
+  imageFloatCount: 0,
+  imageFloatSize: 2,
+  imageFloatTravel: 100,
   opening: 100,
   vignette: 0,
   falloffX: 0.5,
@@ -387,6 +393,7 @@ export interface RowSpec {
   widthKeys: Key[]; // stripe multiplier chain over [openAt, openAt + total]
   shiftKeys: Key[]; // sideways drift (px at 1x) over [0, total]
   floaters: Floater[];
+  imageFloaters: Floater[]; // the same kind of block, but a slice of the photo pushed sideways (stripeShift = the push)
 }
 
 export interface Timeline {
@@ -581,6 +588,7 @@ export function buildScene(p: Params): Scene {
       widthKeys: [],
       shiftKeys: [],
       floaters: [],
+      imageFloaters: [],
     });
   }
   const maxRank = rows.reduce((m, r) => Math.max(m, r.rank), 0);
@@ -768,14 +776,16 @@ function finishScene(
   // Floating blocks: masks inside the hole showing their own stripe
   // pattern (changing colour like the rows), growing, shrinking to nothing
   // and back (spawn / despawn), and drifting on their own ranges. The count
-  // is spread over the rows, innermost first.
-  const count = clampInt(p.floatCount, 0, 60);
-  if (count > 0) {
-    const fmax = Math.max(0.2, p.floatSize) * unit;
+  // is spread over the rows, innermost first. Image floaters are built the
+  // same way (own count, size and travel, own seeds) and show a slice of the
+  // photo pushed sideways instead of stripes.
+  const makeFloaters = (count: number, sizeUnits: number, travel: number, seedBase: number, into: (r: RowSpec) => Floater[]) => {
+    if (count <= 0) return;
+    const fmax = Math.max(0.2, sizeUnits) * unit;
     const fmin = fmax / 2;
     const fMoveMin = Math.max(0.2, Math.min(p.floatMoveMin, p.floatMoveMax));
     const fMoveMax = Math.max(fMoveMin, p.floatMoveMax);
-    const fTravelMax = Math.max(0, p.floatTravel);
+    const fTravelMax = Math.max(0, travel);
     const fTravelMin = fTravelMax / 2;
     const order = [...rows].sort((a, b) => {
       const da = Math.abs((a.y0 + a.y1) / 2 - H / 2);
@@ -787,7 +797,7 @@ function finishScene(
       const r = hosts[j % hosts.length];
       const k = r.index;
       const reach = Math.min(W / 2 - r.remL * unit, W / 2 - r.remR * unit);
-      const fr = (key: number) => rand(p.blockSeed, k, 5000 + j * 100 + key);
+      const fr = (key: number) => rand(p.blockSeed, k, seedBase + j * 100 + key);
       const x0 = -reach * 0.8 + reach * 1.6 * fr(1);
       const size = (i: number) => (fr(40 + i) < 0.35 ? 0 : fmin + fr(41 + i * 7) * (fmax - fmin));
       const wk: Key[] = [{ t: 0, v: size(0) }];
@@ -802,7 +812,7 @@ function finishScene(
         sk.push({ t: tk, v: sv });
       });
       sk.push({ t: T, v: sk[0].v });
-      r.floaters.push({
+      into(r).push({
         x0,
         phase: fr(4) * 2,
         widthKeys: wk,
@@ -811,7 +821,9 @@ function finishScene(
         stripeShift: driftChain(T, fMoveMin, fMoveMax, fTravelMin * 0.5, fTravelMax * 0.5, (i) => fr(70 + i)),
       });
     }
-  }
+  };
+  makeFloaters(clampInt(p.floatCount, 0, 60), p.floatSize, p.floatTravel, 5000, (r) => r.floaters);
+  makeFloaters(clampInt(p.imageFloatCount, 0, 60), p.imageFloatSize, p.imageFloatTravel, 6000, (r) => r.imageFloaters);
 
   let keyframes: Scene["keyframes"] = null;
   if (layout === "reveal") {
@@ -1407,19 +1419,39 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
     const cB = r.half === "top" ? p.colors.topB : p.colors.bottomB;
     const left = Math.round(cx - holeL);
     const right = Math.round(cx + holeR);
-    // each half carries its pattern along with its hole edge
-    shapeRow = r.index;
-    shapeFloater = false;
-    drawStripes(ctx, origin - holeL, 0, left, y0, h, w, r.phase, cA, cB);
-    drawStripes(ctx, origin + holeR, right, W, y0, h, w, r.phase, cA, cB);
     // Floaters trail the opening: they travel outward a beat behind the
     // hole edge and shrink away as the row reaches fully open (back again
     // the same way when it closes).
     // in the held-open layouts (side, full) they simply live in the open rows
     const held = scene.layout === "side" || scene.layout === "full";
     const trail = held ? 1 : Math.sqrt(Math.max(0, 1 - pr));
+    const lag = held || trail <= 0.02 ? 1 : rowProgress(scene, p, r, t - 0.15);
+    // Image floaters: slices of the photo inside the hole, pushed sideways;
+    // they sit under the stripes and the block floaters
+    if (image && r.imageFloaters.length && right - left > 1 && trail > 0.02) {
+      const c = coverRect(image, W, H, p.imageZoom, p.imageX, p.imageY);
+      for (const f of r.imageFloaters) {
+        const fw = evalChain(scene, f.widthKeys, t) * scale * trail;
+        if (fw < 4) continue;
+        const fx = cx + (f.x0 * lag + evalChain(scene, f.shiftKeys, t)) * scale;
+        const a = Math.max(left, fx - fw / 2);
+        const b = Math.min(right, fx + fw / 2);
+        if (b - a < 1) continue;
+        const push = evalChain(scene, f.stripeShift, t) * 2 * scale;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(a, y0, b - a, h);
+        ctx.clip();
+        ctx.drawImage(image.source, c.x + push, c.y, c.dw, c.dh);
+        ctx.restore();
+      }
+    }
+    // each half carries its pattern along with its hole edge
+    shapeRow = r.index;
+    shapeFloater = false;
+    drawStripes(ctx, origin - holeL, 0, left, y0, h, w, r.phase, cA, cB);
+    drawStripes(ctx, origin + holeR, right, W, y0, h, w, r.phase, cA, cB);
     if (r.floaters.length && right - left > 1 && trail > 0.02) {
-      const lag = held ? 1 : rowProgress(scene, p, r, t - 0.15);
       ctx.save();
       ctx.beginPath();
       ctx.rect(left, y0, right - left, h);
