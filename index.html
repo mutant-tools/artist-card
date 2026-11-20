@@ -8,7 +8,8 @@
   </head>
   <body>
     <input type="file" id="fileInput" accept="image/*,video/mp4,video/quicktime,video/webm,.touquet" hidden />
-    <input type="file" id="touquetInput" accept=".touquet,application/json" hidden />
+    <!-- no accept filter: macOS has no type for .touquet, so a filter greys the files out -->
+    <input type="file" id="touquetInput" hidden />
     <input type="file" id="audioInput" accept="audio/mpeg,.mp3" hidden />
 
     <div id="app">
