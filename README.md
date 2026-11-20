@@ -109,19 +109,39 @@ Right column:
   in them).
 - **Colours** the 67 Touquet colourways, locked sets of four (top A / B,
   bottom A / B): the arrows step through them, the box shows the current
-  number (type one to jump; `–` means custom colours). Click a swatch for a
-  picker, hover it and press Cmd+V to paste a hex (with or without #).
+  number (type one to jump; `–` means custom colours). A click on a swatch
+  copies its hex, a double click opens a picker, hover it and press Cmd+V
+  to paste a hex (with or without #).
+- **Blocks** the colour behind the words: the design's yellow or one of
+  the four strip colours; the text turns black or white, whichever has the
+  better contrast on it.
+- **Image** a photo or a video (MP4, MOV, WebM), loaded or dropped on the
+  preview. A video plays with the timeline; the strip above the card shows
+  the piece that is used, as long as the export (a shorter video loops), and
+  dragging it moves the start, like the music. Exports take the video frame
+  by frame. **Remove** leaves the card without a background.
+- **Logo** off, top or bottom, black or white, in every layout; **Lockup**
+  the Basic, 10 Years or Full version.
+- **Artist** Enter in the name fields puts the rest of the name on a new row
+  of blocks (the second artist keeps the B2B badge on its first row).
 - **Loops** 1x, 2x or 4x: how many times the loop plays in the MP4, so a
   longer piece of the music fits; the timeline and the music strip cover
   that whole length.
 - **Copy / Paste settings** the whole state as JSON (values are clamped).
   The URL hash always carries every setting that differs from the defaults
   (photo excepted), so the link itself restores the state.
-- **Export MP4 / PNG**.
+- **Export MP4 / PNG** at the card's size: 1080x1080, 1080x1350 or
+  1080x1920. Without a photo the PNG is transparent.
 - **Copy for Figma** the frame shown in the preview, for the Figma plugin
   (see Figma below).
-- **Export InDesign** the frame shown in the preview as an InDesign file
-  (see InDesign below).
+- **Export InDesign / Illustrator** the frame shown in the preview as an
+  InDesign or Illustrator file (see below).
+- **File** name, **Save** and **Load**: everything in one `.touquet` file
+  (settings, the photo or video, the music, with their start points). A
+  `.touquet` can also be dropped on the preview.
+- The timeline: in the reveal, the ticks of the resolved state (everything
+  in, nothing leaving yet) are tinted and its two ends darker; Shift-drag
+  on the timeline snaps to those two keyframes.
 
 ## Figma
 
@@ -154,9 +174,20 @@ per row), the logo vector paths, every word its own text frame in Avantt
 Bold with the tracking. The block behind a word is paragraph shading
 measured from the baseline (cap height plus the padding up, padding down),
 and the frame auto-sizes, so the block follows the text when it is edited.
-Like InDesign itself, the other words in a row do not slide along. Only the
+Like InDesign itself, the other words in a row do not slide along. The
+document has a 3 mm bleed (as if the short side were an A4 width: 15 px at
+1080), into which the photo and the strips on the edges extend. Only the
 frame shown in the preview is taken (set the time first). Avantt must be
 installed.
+
+## Illustrator
+
+**Export Illustrator** downloads an SVG that Illustrator opens with the
+artboard as the card and the same bleed around it: the photo embedded,
+every stripe and floater a rectangle (grouped per row), the logo as paths,
+every word a text object in Avantt Bold with the tracking and a rectangle
+behind it. Illustrator has no text-following block, so there the block
+is a plain rectangle.
 
 ## Model
 
