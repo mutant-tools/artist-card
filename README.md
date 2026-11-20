@@ -115,12 +115,19 @@ pointer is over the row.
   better contrast on it); a double click opens a picker, Alt-click copies
   the hex, hover a swatch and press Cmd+V to paste a hex (with or without
   #).
-- **Image** a photo or a video (MP4, MOV, WebM), loaded or dropped on the
-  preview. A video plays with the timeline at its own frame rate; the piece
-  used is as long as the export (a shorter video loops), and the stepper
-  that appears between Load and Remove sets where in the video it starts,
-  in seconds. Exports take the video frame by frame. **Remove** leaves the
-  card without a background.
+- **Image** a photo or a video, loaded or dropped on the preview. A video
+  (MP4, MOV or WebM; H.264, HEVC, VP9, AV1, ProRes, any size, any frame
+  rate) is converted once on import into a uniform in-memory clip (H.264,
+  at most 2160 px on the long side and 60 fps, a key frame every half
+  second; the Load button shows the progress) and from then on the tool
+  decodes the frames itself with WebCodecs, driven by the timeline, so
+  playback runs at the clip's own frame rate with nothing for the browser
+  to throttle or skip. A source the browser's WebCodecs cannot decode
+  (ProRes in Safari, for instance) is stepped through a video element
+  instead, at 30 fps. The piece used is as long as the export (a shorter
+  video loops), and the stepper that appears between Load and Remove sets
+  where in the video it starts, in seconds, wrapping round the end. Exports
+  read the same frames. **Remove** leaves the card without a background.
 - **Logo** off, top or bottom, white or black, in every layout; **Lockup**
   the Basic, 10 Years or Full version. At the bottom each lockup keeps its
   own ink at the margin; at the top the wordmark stays put when the lockup

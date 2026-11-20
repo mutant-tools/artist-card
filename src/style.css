@@ -283,16 +283,6 @@ input[type="text"]:focus { background: var(--surface-hover); }
 #canvas.block-drag { cursor: grabbing; }
 #canvas.empty { cursor: pointer; }
 .stage.dragover #canvas { outline: 2px dashed var(--text); outline-offset: -2px; }
-/* the video element must be in the page for Safari to keep decoding it; it is never shown */
-.offscreen-video {
-  position: fixed;
-  left: 0;
-  top: 0;
-  width: 2px;
-  height: 2px;
-  opacity: 0.01;
-  pointer-events: none;
-}
 
 .timeline {
   display: flex;

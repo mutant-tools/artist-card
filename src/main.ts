@@ -39,6 +39,7 @@ import { loadLogo } from "./logo";
 import { buildIdmlZip } from "./indesign";
 import { buildIllustratorSvg } from "./illustrator";
 import { audioPackets, loadAudioFile, playAudio, stopAudio, windowPeaks, type AudioTrack } from "./audio";
+import { importVideo, type VideoClip } from "./video";
 
 const FPS = 60; // frame counter, arrow-key stepping and MP4 export
 const TICKS_PER_SECOND = 15; // timeline tick pitch
@@ -1085,19 +1086,18 @@ stageEl.addEventListener("drop", (e) => {
 });
 
 // ---------- video background ----------
-// An MP4 (or MOV / WebM the browser can play) behind the card instead of a
-// photo. The piece used is as long as the export; the stepper in the Image
-// row says where in the video it starts. Playback follows the timeline;
-// exports seek the video frame by frame.
-interface VideoTrack {
-  el: HTMLVideoElement; // the one drawn on the card; it sits in the page, unseen, so Safari keeps decoding it
-  file: File;
-  duration: number;
-}
-let video: VideoTrack | null = null;
+// A video (MP4, MOV, WebM; any codec the browser or WebCodecs can decode)
+// behind the card instead of a photo. On import it is converted once into
+// a uniform in-memory clip (see video.ts); from then on the tool decodes
+// the frames itself, driven by the timeline, so playback runs at the
+// clip's own frame rate without a <video> element that could stall. The
+// piece used is as long as the export; the stepper in the Image row says
+// where in the video it starts. Exports read the same frames.
+let video: VideoClip | null = null;
 let videoStart = 0; // s into the video where the loop starts
 const videoStartStepper = $<HTMLDivElement>("videoStartStepper");
 const videoStartText = $<HTMLInputElement>("videoStartText");
+const imageLoadBtn = $<HTMLButtonElement>("imageLoadBtn");
 /** How much of the video one export uses: the export length, or the whole video if that is shorter (it then loops). */
 function videoSpan(): number {
   return video ? Math.min(video.duration, exportLength()) : 0;
@@ -1107,83 +1107,72 @@ function videoTimeAt(t: number): number {
   const span = videoSpan();
   return span > 0 && video ? (videoStart + (t % span)) % video.duration : 0;
 }
-function seekVideo(t: number, el: HTMLVideoElement | null = video?.el ?? null): Promise<void> {
-  if (!el) return Promise.resolve();
-  if (Math.abs(el.currentTime - t) < 1 / 120) return Promise.resolve();
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      el.removeEventListener("seeked", finish);
-      resolve();
-    };
-    el.addEventListener("seeked", finish);
-    el.currentTime = t;
-    setTimeout(finish, 800); // a stuck seek must not freeze the tool
+/** Show the frame for a video time; `draw` says whether to repaint when it arrives (playback repaints anyway). */
+function showVideoFrame(vt: number, redraw: boolean): Promise<void> {
+  const v = video;
+  if (!v) return Promise.resolve();
+  return v.reader.frameAt(vt).then((f) => {
+    if (!f || video !== v || !image) return;
+    if (image.source !== f.canvas) {
+      image.source = f.canvas;
+      if (redraw) draw();
+    }
   });
 }
-/** Keep the video's own clock on the timeline: seek while paused, nudge while playing. */
+/** Keep the picture on the timeline: while playing, pick the frame for the current time (skipping a tick if a decode is still running). */
 function syncVideo() {
   if (!video) return;
-  const want = videoTimeAt(time);
-  const el = video.el;
-  if (playing) {
-    // the video runs on its own clock at its own frame rate; only a real
-    // drift (the loop wrapping) is corrected, and never mid-seek
-    if (el.paused) void el.play().catch(() => undefined);
-    if (!el.seeking && Math.abs(el.currentTime - want) > 0.3) el.currentTime = want;
-  } else {
-    if (!el.paused) el.pause();
-    void seekVideo(want).then(() => {
-      if (!playing) draw();
-    });
-  }
+  if (playing && video.reader.busy) return;
+  void showVideoFrame(videoTimeAt(time), !playing);
 }
 const videoBeforeFrame: BeforeFrame = async (t) => {
-  if (video) await seekVideo(videoTimeAt(t));
+  if (video) await showVideoFrame(videoTimeAt(t), false);
 };
 async function loadVideoFile(file: File) {
   const gen = ++loadGen;
-  const el = document.createElement("video");
-  el.muted = true;
-  el.playsInline = true;
-  el.preload = "auto";
-  el.loop = true;
-  el.className = "offscreen-video";
-  el.setAttribute("aria-hidden", "true");
-  const url = URL.createObjectURL(file);
-  el.src = url;
+  const wasPlaying = playing;
+  setPlaying(false);
+  imageLoadBtn.disabled = true;
+  imageRemoveBtn.disabled = true;
+  let clip: VideoClip;
   try {
-    await new Promise<void>((res, rej) => {
-      el.onloadedmetadata = () => res();
-      el.onerror = () => rej(new Error("video failed"));
+    clip = await importVideo(file, (f, stage) => {
+      if (gen !== loadGen) return;
+      imageLoadBtn.textContent = `${stage === "decoding" ? "Reading" : "Converting"} ${Math.round(f * 100)}%`;
     });
-  } catch {
-    URL.revokeObjectURL(url);
-    if (gen === loadGen) alert("Could not play that video. Use an MP4 (H.264).");
+  } catch (e) {
+    console.error("[video]", e);
+    if (gen === loadGen) alert(`Could not read that video (${e instanceof Error ? e.message : e}). An MP4 with H.264 always works.`);
+    return;
+  } finally {
+    imageLoadBtn.textContent = "Load";
+    imageLoadBtn.disabled = false;
+    imageRemoveBtn.disabled = !image;
+  }
+  if (gen !== loadGen) {
+    clip.reader.close();
     return;
   }
-  if (gen !== loadGen) return;
   clearVideo();
   imageFile = null;
-  document.body.appendChild(el);
-  video = { el, file, duration: el.duration };
+  video = clip;
   videoStart = 0;
   params.imageZoom = 1;
   params.imageX = 0;
   params.imageY = 0;
-  await seekVideo(0);
-  setImage({ source: el, width: el.videoWidth, height: el.videoHeight });
+  const first = await clip.reader.frameAt(0);
+  if (gen !== loadGen || video !== clip) return;
+  const blank = document.createElement("canvas");
+  blank.width = clip.width;
+  blank.height = clip.height;
+  setImage({ source: first?.canvas ?? blank, width: clip.width, height: clip.height });
   videoStartStepper.hidden = false;
   syncVideoStart();
-  if (playing) syncVideo();
+  if (wasPlaying) setPlaying(true);
 }
 function clearVideo() {
   if (!video) return;
-  video.el.pause();
-  URL.revokeObjectURL(video.el.src);
-  video.el.remove();
+  video.reader.close();
   video = null;
   videoStartStepper.hidden = true;
 }
@@ -2131,7 +2120,7 @@ declare global {
       figmaSpec: () => Promise<unknown>;
       indesignZip: () => Promise<{ bytes: Uint8Array; name: string }>;
       illustratorSvg: () => Promise<{ svg: string; name: string }>;
-      videoEl: () => HTMLVideoElement | null;
+      videoInfo: () => { duration: number; fps: number; width: number; height: number; codec: string; frameTime: number | null } | null;
       videoStart: () => number;
       logoRect: () => Rect | null;
       setTime: (t: number) => void;
@@ -2148,7 +2137,10 @@ window.artistCard = {
   figmaSpec,
   indesignZip: async () => buildIdmlZip(await figmaSpec()),
   illustratorSvg: async () => buildIllustratorSvg(await figmaSpec()),
-  videoEl: () => video?.el ?? null,
+  videoInfo: () =>
+    video
+      ? { duration: video.duration, fps: video.fps, width: video.width, height: video.height, codec: video.codec, frameTime: video.reader.current?.timestamp ?? null }
+      : null,
   videoStart: () => videoStart,
   logoRect: () => logoRect(params, scene, 1),
   setTime: (t: number) => {
