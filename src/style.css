@@ -417,7 +417,9 @@ input[type="text"]:focus { background: var(--surface-hover); }
 .vstep > .btn { flex: 0 0 var(--control) !important; height: var(--control); }
 .vstep > .btn.grow { flex: 1 1 auto !important; height: auto; }
 .bg-swatches > .btn { flex: 1 1 0; min-width: 0; padding: 0; }
-.bg-swatches > .btn.active { box-shadow: inset 0 0 0 3px var(--bg, #fff), inset 0 0 0 4px var(--text); }
+/* the chosen one is marked like the colour swatches: a line on its edge, the swatch keeps its size */
+.bg-swatches > .btn:hover { outline: 1px solid var(--text); outline-offset: -1px; }
+.bg-swatches > .btn.active { outline: 2px solid var(--text); outline-offset: -2px; }
 /* after #canvas.empty (a card without photo), which would otherwise win with its pointer */
 #canvas.block-hover { cursor: grab; }
 #canvas.block-drag { cursor: grabbing; }
