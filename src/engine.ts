@@ -21,6 +21,23 @@ export const STACK_KEYS: StackKey[] = ["icon", "title", "day", "time", "artist",
 /** The info sentence and the extra ones added with +. */
 export const INFO_KEYS = ["info", "info2", "info3", "info4"] as const;
 export type InfoKey = (typeof INFO_KEYS)[number];
+/**
+ * The free blocks as groups, top to bottom: the ones snapped together
+ * (p.groups) and every other free block on its own. `present` says which
+ * blocks actually show.
+ */
+export function freeGroups(p: Params, present: (k: StackKey) => boolean): StackKey[][] {
+  const ok = (k: string): k is StackKey => (STACK_KEYS as string[]).includes(k) && p.free[k as StackKey] !== undefined && present(k as StackKey);
+  const seen = new Set<StackKey>();
+  const out: StackKey[][] = [];
+  for (const g of p.groups.split(";")) {
+    const m = g.split("+").filter((k): k is StackKey => ok(k) && !seen.has(k as StackKey));
+    for (const k of m) seen.add(k);
+    if (m.length) out.push(m);
+  }
+  for (const k of STACK_KEYS) if (ok(k) && !seen.has(k)) out.push([k]);
+  return out;
+}
 /** The size of one info block: the extra ones follow the first until they are given their own. */
 export function infoSizeOf(p: Params, key: InfoKey): InfoSize {
   return key === "info" ? p.infoSize : p[`${key}Size`] || p.infoSize;
@@ -111,6 +128,7 @@ export interface Params {
   layout: LayoutKind;
   stack: StackKey[]; // one-stage layouts: the order of the block rows in the centred stack
   free: Partial<Record<StackKey, number>>; // blocks dragged out of the stack: their centre as a fraction of H (always centred in x)
+  groups: string; // free blocks snapped together: "info+info3;day+time", each group top to bottom; its members share one free value (the group's centre)
   stackY: number; // one-stage layouts: the stack's edge as a fraction of H (bottom edge, or top edge with stackAnchor top)
   stackAnchor: StackAnchor;
   infoSize: InfoSize; // s = the 12 px sentence, m = the 18 px small block
@@ -195,6 +213,7 @@ export const DEFAULT_PARAMS: Params = {
   layout: "reveal",
   stack: ["icon", "title", "day", "time", "artist", "stage", "info", "info2", "info3", "info4"],
   free: {},
+  groups: "",
   stackY: (1350 - 103) / 1350,
   stackAnchor: "bottom",
   infoSize: "s",
@@ -1646,7 +1665,6 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
   }
   const order = [...p.stack.filter((k) => items.has(k)), ...STACK_KEYS.filter((k) => items.has(k) && !p.stack.includes(k))];
   const stacked = order.filter((k) => p.free[k] === undefined);
-  const freeKeys = order.filter((k) => p.free[k] !== undefined);
   const heightOf = (rows: LabelRow[]) => rows.reduce((a, r) => a + r.h, 0) + gap * (rows.length - 1);
   const widthOf = (rows: LabelRow[]) => rows.reduce((a, r) => Math.max(a, r.w + 2 * Math.abs(r.shift)), 0);
   const nBlocks = order.reduce((a, k) => a + items.get(k)!.reduce((b, r) => b + r.blocks.length, 0), 0);
@@ -1677,9 +1695,14 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
     }
     out.stackRect = { x: cx - gw / 2, y: top, w: gw, h: gh };
   }
-  for (const key of freeKeys) {
-    const rows = items.get(key)!;
-    drawItem(key, clamp01(p.free[key]!) * H - heightOf(rows) / 2, cx);
+  // free blocks: on their own, or snapped together as a group around one centre
+  for (const members of freeGroups(p, (k) => items.has(k))) {
+    const gh = members.reduce((a, k) => a + heightOf(items.get(k)!), 0) + gap * (members.length - 1);
+    let yy = clamp01(p.free[members[0]]!) * H - gh / 2;
+    for (const key of members) {
+      drawItem(key, yy, cx);
+      yy += heightOf(items.get(key)!) + gap;
+    }
   }
   ctx.restore();
   return out;

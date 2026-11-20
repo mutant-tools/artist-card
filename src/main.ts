@@ -29,6 +29,7 @@ import {
   ICON_POSITIONS,
   INFO_KEYS,
   infoSizeOf,
+  freeGroups,
   isInfoKey,
   type IconPos,
   contrastText,
@@ -991,7 +992,7 @@ function removeInfo(key: (typeof INFO_KEYS)[number]) {
     const next = INFO_KEYS[j + 1];
     params[INFO_KEYS[j]] = next ? params[next] : "";
     params[`${INFO_KEYS[j]}Size` as "info2Size"] = next ? params[`${next}Size` as "info2Size"] : "";
-    delete params.free[INFO_KEYS[j]];
+    ungroup(INFO_KEYS[j]);
     infoEls[INFO_KEYS[j]].value = params[INFO_KEYS[j]];
     autosize(infoEls[INFO_KEYS[j]]);
   }
@@ -1637,7 +1638,7 @@ function overArtist(x: number, y: number): boolean {
   const r = layout.artistRect;
   return !!r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
-type DragMode = "none" | "label" | "pan" | "falloff" | "block" | "stack";
+type DragMode = "none" | "label" | "pan" | "falloff" | "block" | "stack" | "group";
 let drag: DragMode = "none";
 let dragMoved = false;
 let lastX = 0;
@@ -1704,27 +1705,57 @@ function sideOf(key: StackKey, cy: number): "above" | "below" | "between" {
   if (centres.every((c) => cy >= c)) return "below";
   return "between";
 }
-/**
- * A free block brought up against another free block sits at the stack's
- * gap from it (both stay free). The nearest one wins.
- */
-function magnet(key: StackKey, cyB: number, k: number) {
-  const me = layout.blocks[key]!;
-  const gap = LABEL_GAP * scene.S;
-  let best: Rect | null = null;
-  let bestD = (DETACH / 2) * k;
+/** The free group `key` is in, top to bottom (just itself when it is on its own). */
+function freeGroupOf(key: StackKey): StackKey[] {
+  return freeGroups(params, (k) => !!layout.blocks[k]).find((g) => g.includes(key)) ?? [key];
+}
+function rectOf(keys: StackKey[]): Rect {
+  const y = Math.min(...keys.map((o) => layout.blocks[o]!.y));
+  const b = Math.max(...keys.map((o) => layout.blocks[o]!.y + layout.blocks[o]!.h));
+  return { x: 0, y, w: 0, h: b - y };
+}
+function heightOfKeys(keys: StackKey[]): number {
+  return keys.reduce((a, o) => a + layout.blocks[o]!.h, 0) + LABEL_GAP * scene.S * (keys.length - 1);
+}
+/** Take `keys` out of every free group (their free values are left alone). */
+function stripGroups(keys: StackKey[]) {
+  params.groups = params.groups
+    .split(";")
+    .map((g) => g.split("+").filter((k) => k && !keys.includes(k as StackKey)))
+    .filter((g) => g.length > 1)
+    .map((g) => g.join("+"))
+    .join(";");
+}
+/** A block that stops being free: out of its group and back in the stack. */
+function ungroup(key: StackKey) {
+  delete params.free[key];
+  stripGroups([key]);
+}
+/** Make `keys` (top to bottom) one free group with its top edge at `top`; one key = a free block on its own. */
+function setGroup(keys: StackKey[], top: number) {
+  stripGroups(keys);
+  const v = clamp((top + heightOfKeys(keys) / 2) / canvas.height, 0, 1);
+  for (const o of keys) params.free[o] = v;
+  if (keys.length > 1) params.groups = [params.groups, keys.join("+")].filter(Boolean).join(";");
+}
+/** `key` at centre `cy` sorted in among `mates` by their centres. */
+function orderWith(mates: StackKey[], key: StackKey, cy: number): StackKey[] {
+  return [...mates.map((o) => ({ o, y: layout.blocks[o]!.y + layout.blocks[o]!.h / 2 })), { o: key, y: cy }].sort((a, b) => a.y - b.y).map((e) => e.o);
+}
+/** The free block nearest to the span y0..y1, within reach (null when none). */
+function nearestFree(key: StackKey, y0: number, y1: number, reach: number): StackKey | null {
+  let best: StackKey | null = null;
+  let bestD = reach;
   for (const o of STACK_KEYS) {
     const ro = layout.blocks[o];
     if (o === key || params.free[o] === undefined || !ro) continue;
-    const d = gapTo(cyB - me.h / 2, cyB + me.h / 2, ro);
+    const d = gapTo(y0, y1, ro);
     if (d < bestD) {
       bestD = d;
-      best = ro;
+      best = o;
     }
   }
-  if (!best) return;
-  const above = cyB < best.y + best.h / 2;
-  params.free[key] = clamp((above ? best.y - gap - me.h / 2 : best.y + best.h + gap + me.h / 2) / canvas.height, 0, 1);
+  return best;
 }
 function dragBlock(py: number, k: number) {
   const key = dragKey!;
@@ -1734,41 +1765,64 @@ function dragBlock(py: number, k: number) {
   const me = layout.blocks[key]!;
   const y0 = cyB - me.h / 2;
   const y1 = cyB + me.h / 2;
+  const near = (DETACH / 2) * k;
+  const isFree = params.free[key] !== undefined;
+  const mates = isFree ? freeGroupOf(key).filter((o) => o !== key) : [];
   const sr = othersRect(key);
-  if (!sr) {
+  if (mates.length) {
+    // in a free group: it behaves like the stack. Reorder inside it, leave
+    // it when pulled clear; the blocks that stay keep their place
+    const gr = rectOf(mates);
+    if (gapTo(y0, y1, gr) > DETACH * k) {
+      setGroup(mates, gr.y);
+      setGroup([key], y0);
+    } else {
+      const all = orderWith(mates, key, cyB);
+      // around the group's own centre, so nothing drifts while reordering
+      setGroup(all, params.free[mates[0]]! * H - heightOfKeys(all) / 2);
+    }
+  } else if (!isFree && !sr) {
     // nothing else in the stack: this block is the stack, so dragging it
     // moves the stack itself (keeps it a stack for others to snap into)
-    delete params.free[key];
     pinStack(y0, me.h);
-    // a free block it is brought up against joins it, staying where it is
-    for (const o of STACK_KEYS) {
-      const ro = layout.blocks[o];
-      if (o === key || params.free[o] === undefined || !ro) continue;
-      if (gapTo(y0, y1, ro) < (DETACH / 2) * k) {
-        delete params.free[o];
-        const above = cyB < ro.y + ro.h / 2;
-        pinStack(above ? ro.y - gap - me.h : ro.y, me.h + gap + ro.h);
-        params.stack = [...(above ? [key, o] : [o, key]), ...params.stack.filter((s) => s !== key && s !== o)];
-        break;
-      }
+    // a free block or group it is brought up against joins it, staying where it is
+    const o = nearestFree(key, y0, y1, near);
+    if (o) {
+      const grp = freeGroupOf(o);
+      const gr = rectOf(grp);
+      for (const m of grp) ungroup(m);
+      const above = cyB < gr.y + gr.h / 2;
+      pinStack(above ? gr.y - gap - me.h : gr.y, me.h + gap + gr.h);
+      const mine = above ? [key, ...grp] : [...grp, key];
+      params.stack = [...mine, ...params.stack.filter((s) => !mine.includes(s))];
     }
-  } else if (params.free[key] !== undefined) {
-    params.free[key] = clamp(cyB / H, 0, 1);
-    // back against the stack: snap in at the row under the pointer
-    if (gapTo(y0, y1, sr) < (DETACH / 2) * k) {
+  } else if (isFree) {
+    const o = nearestFree(key, y0, y1, near);
+    const dStack = sr ? gapTo(y0, y1, sr) : Infinity;
+    const dFree = o ? gapTo(y0, y1, layout.blocks[o]!) : Infinity;
+    if (sr && dStack < near && dStack <= dFree) {
+      // back against the stack: snap in at the row under the pointer
       const side = sideOf(key, cyB);
-      delete params.free[key];
+      ungroup(key);
       reorderTo(key, cyB);
       // joining at an end: the others keep their place, the stack grows towards the block
       if (side === "above") pinStack(sr.y - gap - me.h, sr.h + gap + me.h);
       else if (side === "below") pinStack(sr.y, sr.h + gap + me.h);
-    } else magnet(key, cyB, k);
+    } else if (o) {
+      // against another free block: the two (or its whole group) become a group
+      const grp = freeGroupOf(o);
+      const gr = rectOf(grp);
+      const all = orderWith(grp, key, cyB);
+      const i = all.indexOf(key);
+      // at an end the group keeps its place and grows towards the block
+      setGroup(all, i === 0 ? gr.y - gap - me.h : i === all.length - 1 ? gr.y : gr.y - (me.h + gap) / 2);
+    } else setGroup([key], y0);
   } else {
     // pulled clear of the other blocks: detach and sit at its own height
-    if (gapTo(y0, y1, sr) > DETACH * k) {
-      params.free[key] = clamp(cyB / H, 0, 1);
+    if (gapTo(y0, y1, sr!) > DETACH * k) {
+      setGroup([key], y0);
       // the others keep their place when an end block leaves
-      if (me.y < sr.y || me.y + me.h > sr.y + sr.h) pinStack(sr.y, sr.h);
+      if (me.y < sr!.y || me.y + me.h > sr!.y + sr!.h) pinStack(sr!.y, sr!.h);
     } else reorderTo(key, cyB);
   }
   schedule();
@@ -1786,7 +1840,7 @@ function clearBlock(key: StackKey) {
     params.logo = "off";
     syncLayoutUI();
   } else if (isInfoKey(key)) removeInfo(key);
-  delete params.free[key];
+  ungroup(key);
   drag = "none";
   dragKey = null;
   canvas.classList.remove("block-drag", "block-hover");
@@ -1812,7 +1866,7 @@ canvas.addEventListener("pointerdown", (e) => {
   if (dragKey) {
     const r = layout.blocks[dragKey]!;
     grabDY = pt.y - (r.y + r.h / 2);
-    drag = e.shiftKey ? "stack" : "block";
+    drag = !e.shiftKey ? "block" : params.free[dragKey] !== undefined ? "group" : "stack";
     canvas.classList.add("block-drag");
   } else if (e.shiftKey && !falloffSelected && overStack(pt.x, pt.y)) {
     drag = "stack";
@@ -1845,6 +1899,13 @@ canvas.addEventListener("pointermove", (e) => {
   lastY = e.clientY;
   if (drag === "block") {
     dragBlock(pt.y, pt.k);
+    return;
+  } else if (drag === "group") {
+    // Shift on a free block: the block, or the group it is snapped into, moves as one
+    const members = freeGroupOf(dragKey!);
+    const v = clamp(params.free[members[0]]! + dy / canvas.height, 0, 1);
+    for (const m of members) params.free[m] = v;
+    schedule();
     return;
   } else if (drag === "stack") {
     // keep the edge inside the range the stack can actually reach, so a drag
@@ -2211,6 +2272,10 @@ function applySettings(str: string): boolean {
       if ((STACK_KEYS as string[]).includes(k) && typeof v === "number" && Number.isFinite(v)) free[k as StackKey] = clamp(v, 0, 1);
     }
     params.free = free;
+    applied++;
+  }
+  if (typeof obj.groups === "string") {
+    params.groups = obj.groups;
     applied++;
   }
   if (obj.loops === 1 || obj.loops === 2 || obj.loops === 4) {
