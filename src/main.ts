@@ -1048,7 +1048,8 @@ stageEl.addEventListener("drop", (e) => {
 // the export: drag it to move the start, like the music. Playback follows
 // the timeline; exports seek the video frame by frame.
 interface VideoTrack {
-  el: HTMLVideoElement;
+  el: HTMLVideoElement; // the one drawn on the card
+  thumbEl: HTMLVideoElement; // a second decoder for the filmstrip, so the thumbnails never seek the playing one
   file: File;
   duration: number;
   thumbs: HTMLCanvasElement[]; // a filmstrip over the whole video
@@ -1067,9 +1068,8 @@ function videoTimeAt(t: number): number {
   const span = videoSpan();
   return span > 0 ? videoStart + (t % span) : 0;
 }
-function seekVideo(t: number): Promise<void> {
-  if (!video) return Promise.resolve();
-  const el = video.el;
+function seekVideo(t: number, el: HTMLVideoElement | null = video?.el ?? null): Promise<void> {
+  if (!el) return Promise.resolve();
   if (Math.abs(el.currentTime - t) < 1 / 120) return Promise.resolve();
   return new Promise((resolve) => {
     let done = false;
@@ -1090,8 +1090,10 @@ function syncVideo() {
   const want = videoTimeAt(time);
   const el = video.el;
   if (playing) {
+    // the video runs on its own clock at its own frame rate; only a real
+    // drift (the loop wrapping) is corrected, and never mid-seek
     if (el.paused) void el.play().catch(() => undefined);
-    if (Math.abs(el.currentTime - want) > 0.2) el.currentTime = want;
+    if (!el.seeking && Math.abs(el.currentTime - want) > 0.3) el.currentTime = want;
   } else {
     if (!el.paused) el.pause();
     void seekVideo(want).then(() => {
@@ -1124,7 +1126,12 @@ async function loadVideoFile(file: File) {
   if (gen !== loadGen) return;
   clearVideo();
   imageFile = null;
-  video = { el, file, duration: el.duration, thumbs: [] };
+  const thumbEl = document.createElement("video");
+  thumbEl.muted = true;
+  thumbEl.playsInline = true;
+  thumbEl.preload = "auto";
+  thumbEl.src = url;
+  video = { el, thumbEl, file, duration: el.duration, thumbs: [] };
   videoStart = 0;
   params.imageZoom = 1;
   params.imageX = 0;
@@ -1141,6 +1148,7 @@ async function loadVideoFile(file: File) {
 function clearVideo() {
   if (!video) return;
   video.el.pause();
+  video.thumbEl.removeAttribute("src");
   URL.revokeObjectURL(video.el.src);
   video = null;
   filmEl.hidden = true;
@@ -1150,18 +1158,19 @@ async function buildFilmThumbs(v: VideoTrack) {
   const n = 16;
   const h = 56;
   const w = Math.max(8, Math.round((h * v.el.videoWidth) / v.el.videoHeight));
+  const el = v.thumbEl;
+  if (el.readyState < 1) await new Promise<void>((res) => el.addEventListener("loadedmetadata", () => res(), { once: true }));
   for (let i = 0; i < n; i++) {
     if (video !== v) return;
     const t = ((i + 0.5) / n) * v.duration;
-    await seekVideo(t);
+    await seekVideo(t, el);
     const c = document.createElement("canvas");
     c.width = w;
     c.height = h;
-    c.getContext("2d")!.drawImage(v.el, 0, 0, w, h);
+    c.getContext("2d")!.drawImage(el, 0, 0, w, h);
     v.thumbs.push(c);
+    syncFilm();
   }
-  await seekVideo(videoTimeAt(time));
-  if (!playing) draw();
 }
 function syncFilm() {
   if (!video) return;
@@ -2116,6 +2125,7 @@ declare global {
       figmaSpec: () => Promise<unknown>;
       indesignZip: () => Promise<{ bytes: Uint8Array; name: string }>;
       illustratorSvg: () => Promise<{ svg: string; name: string }>;
+      videoEl: () => HTMLVideoElement | null;
       setTime: (t: number) => void;
       apply: (json: string) => boolean;
       loadImageUrl: (url: string) => Promise<void>;
@@ -2130,6 +2140,7 @@ window.artistCard = {
   figmaSpec,
   indesignZip: async () => buildIdmlZip(await figmaSpec()),
   illustratorSvg: async () => buildIllustratorSvg(await figmaSpec()),
+  videoEl: () => video?.el ?? null,
   setTime: (t: number) => {
     setTime(t);
     draw();
