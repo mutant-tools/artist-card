@@ -191,8 +191,11 @@ on the stack, the stack grows from its left edge). Only the frame shown in the p
 the time first). The text is set in Avantt Bold, which has to be installed
 on that machine (Inter Bold stands in otherwise, with a note).
 
-Install once: Figma desktop, Plugins > Development > Import plugin from
-manifest, pick `figma-plugin/manifest.json`. Then either
+Install once: download
+https://typograaf.github.io/artist-card/artist-card-figma-plugin.zip and
+unzip it (or use the `figma-plugin/` folder of this repo), then in the Figma
+desktop app: Plugins > Development > Import plugin from manifest, pick
+`figma-plugin/manifest.json`. Then either
 
 - run the plugin: it opens the live tool in its window; set the card up and
   press **Send to Figma**; or

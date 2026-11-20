@@ -5,6 +5,9 @@ set -e
 cd "$(dirname "$0")"
 npm run build
 touch dist/.nojekyll
+# the Figma plugin as a download, always the current one
+rm -f dist/artist-card-figma-plugin.zip
+zip -q -r -X dist/artist-card-figma-plugin.zip figma-plugin -x "*.DS_Store"
 cd dist
 rm -rf .git
 git init -q
