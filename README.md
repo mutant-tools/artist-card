@@ -122,9 +122,10 @@ pointer is over the row.
   in seconds. Exports take the video frame by frame. **Remove** leaves the
   card without a background.
 - **Logo** off, top or bottom, white or black, in every layout; **Lockup**
-  the Basic, 10 Years or Full version. The wordmark stays put when the
-  lockup changes: the Full one is placed at the margin and the others put
-  their wordmark on its wordmark, so only the parts around it come and go.
+  the Basic, 10 Years or Full version. At the bottom each lockup keeps its
+  own ink at the margin; at the top the wordmark stays put when the lockup
+  changes (the Full one is placed at the margin and the others put their
+  wordmark on its wordmark).
 - **Artist** Enter in the name fields puts the rest of the name on a new row
   of blocks (the second artist keeps the B2B badge on its first row).
 - **Loops** 1x, 2x or 4x: how many times the loop plays in the MP4, so a

@@ -1313,10 +1313,11 @@ export function getLogoImages(p?: Params): LogoImages | null {
 }
 /**
  * Where the logo sits at the render scale: the short side wide, centred, with
- * equal margins top or bottom. The three lockups share the wordmark (the
- * "bones"); the full lockup, the largest, is placed at the margin and the
- * others are put where their wordmark lands on its wordmark, so switching
- * lockups only adds or removes the parts around it.
+ * equal margins top or bottom. At the bottom every lockup keeps its own ink
+ * at the margin (the Full lockup's bottom line sits there, the others' wordmark
+ * does). At the top the three share the wordmark's place: the Full lockup is
+ * placed at the margin and the others are put where their wordmark lands on
+ * its wordmark, so switching lockups only adds or removes the parts around it.
  */
 export function logoRect(p: Params, scene: Scene, scale: number): Rect | null {
   logoImages = getLogoImages(p);
@@ -1338,8 +1339,7 @@ export function logoRect(p: Params, scene: Scene, scale: number): Rect | null {
   const r = place(ref);
   const cur = place(logoImages);
   const x = (W - cur.w) / 2;
-  // the wordmark's bottom edge stays where the reference lockup puts it
-  const y = r.y + ref.boneBottom * r.h - logoImages.boneBottom * cur.h;
+  const y = p.logo === "top" ? r.y + ref.boneBottom * r.h - logoImages.boneBottom * cur.h : cur.y;
   return { x, y, w: cur.w, h: cur.h };
 }
 
