@@ -55,7 +55,8 @@ pointer is over the row.
   the stage and the day either way, so the first and last frames never change. **Position**
   (Reveal) snaps the open card's text to the Top (under a top logo), Centre
   or Bottom (above a bottom logo) and keeps it there when the text changes;
-  dragging the name on the preview frees it again. **Type size** (Reveal) sets the open card's text to
+  dragging the name on the preview frees it again. Set or dragged, the
+  text always stays clear of a top or bottom logo. **Type size** (Reveal) sets the open card's text to
   Small (80 %) or Normal (as designed, the default);
   the closed card keeps its size. **+** next to the artist adds a second artist
   (two at most): the B2B badge sits in front of the second name. **Image**

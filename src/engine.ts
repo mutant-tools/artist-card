@@ -2042,6 +2042,10 @@ function artistGroupTop(p: Params, scene: Scene, scale: number, gh: number): num
   else if (p.labelPos === "bottom") top = hi - gh;
   else if (p.labelPos === "center") top = (H - gh) / 2;
   else top = clamp01(p.labelY) * H;
+  // the logo is a safe zone: wherever the text is set or dragged, it stays
+  // clear of a top or bottom logo (with the margin)
+  if (lr && img && p.logo === "bottom") top = Math.min(top, hi - gh);
+  if (lr && img && p.logo === "top") top = Math.max(top, lo);
   return Math.max(0, Math.min(H - gh, top));
 }
 
@@ -2084,8 +2088,9 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
   const unit = scene.unit * scale;
   const cx = W / 2;
   ctx.save();
-  if (scene.layout === "reveal" && p.labelPos) {
-    // a snapped group: the pattern reacts at the height it is drawn at
+  if (scene.layout === "reveal") {
+    // the pattern reacts at the height the group is drawn at (snapped, or
+    // kept clear of the logo)
     const fam = p.fontFamily || "Avantt";
     const tk = TYPE_SIZES[p.typeSize] ?? 1;
     const gap = LABEL_GAP * S * tk;
