@@ -12,6 +12,8 @@ export const FORMATS: Record<Format, [number, number]> = {
 export type Bezier = [number, number, number, number];
 export type Focus = "top" | "bottom";
 export type StaggerOrder = "center" | "top" | "bottom";
+/** Reveal: the open card's lockup: time / name / stage, or time / name / day. */
+export type Lockup = "stage" | "day";
 /** reveal = the two-stage construction; the others are one-stage posters */
 export type LayoutKind = "reveal" | "none" | "row" | "side" | "full" | "page"; // page: the closed card, rows over the whole card, never opening
 export type StackAnchor = "top" | "bottom";
@@ -102,7 +104,8 @@ export interface Params {
   rowsBottom: number;
   focus: Focus; // this half's stripes start three units wide (the other: one)
   blockWidth: number; // units, widest edge block left in an open row
-  blockTravel: number; // units, largest sideways step of a row's pattern
+  floatSeed: number; // reshuffles only the floaters (0 = as the Block seed gives them)
+  blockTravel: number; // unused: rows no longer nudge sideways (kept so old links still read)
   blockSeed: number;
   moveMin: number; // s, shortest block keyframe transition
   moveMax: number; // s, longest
@@ -125,7 +128,24 @@ export interface Params {
   duration: number; // s, one row's open/close transition
   stagger: number; // s between row ranks
   staggerOrder: StaggerOrder;
-  easing: Bezier;
+  lockup: Lockup; // reveal: where the stage and the day sit on the open card (the closed card keeps stage + day)
+  // Easing as After Effects keyframe influence (0..100): Out = the launch
+  // key's outgoing influence, In = the landing key's incoming influence.
+  // Rows: the closing plays the opening in reverse. Text: in and out both
+  // play the curve forward (as in the AE master). 0 / 0 is linear.
+  easeRowOut: number; // the rows opening (closing = the same move reversed)
+  easeRowIn: number;
+  easeTextOut: number; // a label block coming in, and going (same curve, forward)
+  easeTextIn: number;
+  easeTextExitOut: number; // a label block going out (its own curve: a slow build, a late peak, a quick finish)
+  easeTextExitIn: number;
+  easeDriftOut: number; // every key of the constant motion: stripe widths, drift, edge blocks, floaters
+  easeDriftIn: number;
+  typePush: number; // units: how much further the slices by the artist name open as it comes in
+  barScroll: number; // units: thin-bar layout only, how far a bar scrolls on in one burst (0 = off)
+  breath: number; // %: how much wider the stripes breathe at their widest (100 = twice as wide; 0 = the old width steps)
+  slide: number; // px/s at 1080: the constant slide under the eased pattern moves (0 = moves land dead still)
+  push: number; // %, how much further than the hole edge the pattern glides as a row opens
   holdClosed: number; // s
   holdOpen: number; // s
   colors: Colors;
@@ -162,7 +182,8 @@ export interface Params {
   loops: number; // how many loops the MP4 export holds (1, 2 or 4), for longer music
   unitPx: number; // the stripe unit in px at 1080 (45 in the reveal, 24 for the side blocks)
   stripPx: number; // block row: height of one strip row in px at 1080
-  labelTime: number; // seconds one label block takes to come in or go
+  labelTime: number; // seconds one label block takes to come in
+  labelOutTime: number; // seconds one label block takes to go out
   loopLen: number; // one-stage posters: the loop length in seconds (the stripes' motion cycle)
   artist: string;
   stage: string;
@@ -173,11 +194,12 @@ export interface Params {
   imageY: number; // -1..1
 }
 
-export const DEFAULT_EASING: Bezier = [0.7, 0.1, 0.1, 0.9];
-/** The label blocks open and close on a softer curve than the rows. */
-export const LABEL_EASING: Bezier = [0.45, 0.05, 0.2, 1];
+/** AE influences (out, in) as a cubic-bezier: speed 0 at both keys. */
+export function influenceBezier(out: number, inn: number): Bezier {
+  return [clamp01(out / 100), 0, 1 - clamp01(inn / 100), 1];
+}
 /** Seconds one label block takes to open or close. */
-export const LABEL_DURATION = 1;
+export const LABEL_DURATION = 1.7;
 
 export const DEFAULT_PARAMS: Params = {
   format: "4:5",
@@ -185,6 +207,7 @@ export const DEFAULT_PARAMS: Params = {
   rowsBottom: 4,
   focus: "bottom",
   blockWidth: 2,
+  floatSeed: 0,
   blockTravel: 4,
   blockSeed: 4,
   moveMin: 1.8,
@@ -208,9 +231,22 @@ export const DEFAULT_PARAMS: Params = {
   duration: 1.5,
   stagger: 0.15,
   staggerOrder: "center",
-  easing: DEFAULT_EASING,
+  lockup: "stage",
+  easeRowOut: 75,
+  easeRowIn: 90,
+  easeTextOut: 78,
+  easeTextIn: 82,
+  easeTextExitOut: 100,
+  easeTextExitIn: 39,
+  easeDriftOut: 75,
+  easeDriftIn: 75,
+  push: 50,
+  slide: 45,
+  breath: 100,
+  barScroll: 0,
+  typePush: 13,
   holdClosed: 1.5,
-  holdOpen: 1.5,
+  holdOpen: 3,
   colors: {
     topA: "#829FFF",
     topB: "#1625F8",
@@ -252,7 +288,8 @@ export const DEFAULT_PARAMS: Params = {
   loops: 1,
   unitPx: 45,
   stripPx: 36,
-  labelTime: 1,
+  labelTime: 1.7,
+  labelOutTime: 1.1,
   loopLen: 4,
   artist: "Chris Stussy",
   stage: "Main Stage",
@@ -375,6 +412,51 @@ export function timeLabel(p: Pick<Params, "timeStart" | "timeEnd">): string {
   return [p.timeStart, p.timeEnd].map((s) => s.trim()).filter(Boolean).join(" \u2014 ");
 }
 
+/**
+ * Label timing over several lines: the words of a line come in one stagger
+ * apart, and each line starts LINE_STEP staggers after the line above starts
+ * (not after its last word), so stacked lines don't trail each other.
+ * Returns each block's timing slot (in staggers) and the slot count.
+ */
+const LINE_STEP = 1;
+/**
+ * Boxes coming in (the artist group at the start, stage + day at the end):
+ * duration as a fraction of the text time, and how much earlier than the
+ * moment the boxes before them are gone they may start (s).
+ */
+const LABEL_IN_D = 0.8;
+const LABEL_IN_LEAD = 0.35;
+function lineSlots(lens: number[]): { slots: number[]; n: number } {
+  const slots: number[] = [];
+  let start = -LINE_STEP;
+  for (const len of lens) {
+    if (len <= 0) continue;
+    start += LINE_STEP;
+    for (let i = 0; i < len; i++) slots.push(start + i);
+  }
+  return { slots, n: Math.max(1, ...slots.map((x) => x + 1)) };
+}
+/** The open card's line above the name: the time. */
+function topLine(p: Params): string[] {
+  const t = timeLabel(p);
+  return t ? [t] : [];
+}
+/** The open card's line under the name: the stage, or the day. */
+function belowKey(p: Params): "stage" | "day" {
+  return p.lockup === "day" ? "day" : "stage";
+}
+const textLines = (text: string) => text.split(/\n/).map((l) => l.trim()).filter(Boolean);
+/** The artist group's lines (icon, times, name lines, B2B lines, stage) as block counts. */
+function artistLines(p: Params): number[] {
+  const lens: number[] = [iconInline(p) ? 1 : 0, topLine(p).length];
+  const a = textLines(p.artist);
+  for (const l of a) lens.push(wordsOf(l));
+  const a2 = a.length ? textLines(p.artist2) : [];
+  a2.forEach((l, i) => lens.push(wordsOf(l) + (i === 0 ? 1 : 0)));
+  lens.push(wordsOf(p[belowKey(p)]));
+  return lens;
+}
+
 // ---------- deterministic randomness ----------
 
 function hash(...nums: number[]): number {
@@ -434,10 +516,14 @@ export function bezierEase(b: Bezier): (x: number) => number {
 
 // ---------- scene model ----------
 
-/** A keyframe; consecutive keyframes are joined by the opening easing. */
+/** A keyframe; consecutive keyframes are joined by the drift easing (a row closing: the row easing, reversed). */
 export interface Key {
   t: number;
   v: number;
+  /** the move starting at this key is a row closing: the row curve, reversed */
+  close?: boolean;
+  /** the move starting at this key is a row opening's push: the push glide */
+  push?: boolean;
 }
 
 export interface Floater {
@@ -460,6 +546,10 @@ export interface RowSpec {
   phase: number; // 0..2 stripe widths
   m0: number; // stripe multiplier at the start of the opening
   anchor: number; // x (px at 1x) the pattern scales about; off-centre on purpose
+  slideDir: number; // -1 or 1: the side the row's constant slide runs to
+  breathPhase: number; // 0..1, where in the loop this row's stripes start growing (quarter steps)
+  barDir: number; // -1 or 1: thin-bar scroll direction, alternating from bar to bar
+  slideGate: number[] | null; // reveal: cumulative share of the constant slide over the loop (it rests while the pattern is pushed)
   vigL: number; // 0..1 hole width factor per side from the falloff and faith
   vigR: number;
   remL: number; // units, blocks left standing at the edge when fully open (static part)
@@ -500,8 +590,19 @@ export interface Scene {
   layout: LayoutKind;
   seam: LabelClock; // stage + day on the closed card (clock = time hidden)
   artist: LabelClock; // times + artist + stage on the open card (clock = time shown)
-  ease: (x: number) => number;
-  labelEase: (x: number) => number;
+  rowEase: (x: number) => number;
+  textEase: (x: number) => number;
+  textExitEase: (x: number) => number;
+  driftEase: (x: number) => number;
+  slide: number; // px/s at 1x: the constant slide under the eased pattern moves
+  breath: number; // 0..: how much wider the stripes grow at their widest (1 = twice as wide)
+  barScroll: number; // px at 1x: thin bars only, how far a bar scrolls on in one burst (0 = off)
+  barSlide: number; // px/s at 1x: thin bars with scroll on, the slow slide in opposite directions
+  typePush: number; // px at 1x: how much further the slices by the artist name open as it comes in
+  typeY: number; // px at 1x: the artist group's centre height
+  nameBlocks: { first: number; count: number }; // the artist name's blocks within the artist group
+  seamSlots: { slots: number[]; n: number }; // stage + day blocks' timing slots on the seam
+  artistSlots: { slots: number[]; n: number }; // the artist group blocks' timing slots
   keyframes: { start: number; end: number } | null; // the resolved state: everything in, nothing leaving yet (reveal only)
 }
 
@@ -655,6 +756,10 @@ export function buildScene(p: Params): Scene {
       phase: 0,
       m0: 1,
       anchor: 0,
+      slideDir: 1,
+      breathPhase: 0,
+      barDir: 1,
+      slideGate: null,
       vigL: 1,
       vigR: 1,
       remL: 0,
@@ -669,9 +774,10 @@ export function buildScene(p: Params): Scene {
   }
   const maxRank = rows.reduce((m, r) => Math.max(m, r.rank), 0);
   const span = p.stagger * maxRank;
-  const labelD = Math.max(0.1, p.labelTime);
+  const labelD = Math.max(0.1, p.labelTime); // a block coming in
+  const labelOutD = Math.max(0.1, p.labelOutTime); // a block going out (quicker, as in the AE master)
   const labelStagger = p.stagger;
-  const groupSpan = (blocks: number) => (Math.max(1, blocks) - 1) * labelStagger + labelD;
+  const groupSpan = (blocks: number, d = labelD) => (Math.max(1, blocks) - 1) * labelStagger + d;
   if (oneStage) {
     // One stage: the stripes move for the whole loop (rows held closed for
     // the block row, open for the side blocks).
@@ -685,7 +791,7 @@ export function buildScene(p: Params): Scene {
       r.closeDelay = -Math.min(p.duration, total / 2); // the stripe chain's return move lands exactly on the loop point
       r.m0 = 1;
     }
-    return finishScene(p, W, H, S, unit, rows, nTop, tl, clock, clock, bezierEase(p.easing), layout);
+    return finishScene(p, W, H, S, unit, rows, nTop, tl, clock, clock, layout);
   }
   const tOpen = p.holdClosed;
   const tOpenEnd = tOpen + p.duration + span;
@@ -698,39 +804,52 @@ export function buildScene(p: Params): Scene {
   // rows are closed and the artist group is gone; the loop ends when the
   // last seam block has landed. The artist group starts a beat after the
   // bottom row and closes with it.
-  const ease = bezierEase(p.easing);
   const bottomRow = rows[n - 1];
   const bottomDelay = p.stagger * bottomRow.rank;
   const bottomCloseDelay = span - bottomDelay;
-  const seamBlocks = wordsOf(p.stage) + wordsOf(p.day);
-  const artistBlocks = (timeLabel(p) ? 1 : 0) + wordsOf(p.artist) + (p.artist.trim() && p.artist2.trim() ? 1 + wordsOf(p.artist2) : 0) + wordsOf(p.stage);
+  // in slots: blocks on one line a stagger apart, lines a stagger apart
+  const seamBlocks = lineSlots([wordsOf(p.stage), wordsOf(p.day)]).n;
+  const artistBlocks = lineSlots(artistLines(p)).n;
   const seamDelay = Math.min(p.stagger * rows[nTop - 1].rank, p.stagger * (rows[nTop]?.rank ?? Infinity));
   const seamOpenAt = tOpen + seamDelay;
   // One pace for every label move: 1 s per block and one row stagger
   // between blocks. Nothing speeds up to avoid overlap:
   // the artist group waits until the seam blocks are gone, and the seam
   // blocks come back once the artist group is gone.
-  const artistOpenAt = Math.max(tOpen + bottomDelay + 1.5 * p.stagger, seamOpenAt + groupSpan(seamBlocks) + 0.05);
+  // the seam clock runs the other way round: its "open" is the blocks
+  // going out, its "close" them coming back in
+  // the boxes coming in play a little quicker (LABEL_IN_D of the text time)
+  // and start LABEL_IN_LEAD early, while the boxes before them are landing
+  const labelInD = labelD * LABEL_IN_D;
+  const artistOpenAt = Math.max(tOpen + bottomDelay + 1.5 * p.stagger, seamOpenAt + groupSpan(seamBlocks, labelOutD) + 0.05 - LABEL_IN_LEAD);
   const artist: LabelClock = {
     openAt: artistOpenAt,
-    openD: labelD,
+    openD: labelInD,
     openStagger: labelStagger,
     closeAt: tClose + bottomCloseDelay,
-    closeD: labelD,
+    closeD: labelOutD,
     closeStagger: labelStagger,
   };
-  const artistGone = artist.closeAt + groupSpan(artistBlocks);
+  const artistGone = artist.closeAt + groupSpan(artistBlocks, labelOutD);
+  // the stage and day come back in the same way, starting as the rows are
+  // still landing (LABEL_IN_LEAD before the last row is closed)
+  const seamInD = labelInD;
   const seam: LabelClock = {
     openAt: seamOpenAt,
-    openD: labelD,
+    openD: labelOutD,
     openStagger: labelStagger,
-    closeAt: Math.max(tCloseEnd, artistGone + 0.05),
-    closeD: labelD,
+    closeAt: Math.max(tCloseEnd - LABEL_IN_LEAD, artistGone + 0.05),
+    closeD: seamInD,
     closeStagger: labelStagger,
   };
-  const total = seam.closeAt + groupSpan(seamBlocks);
+  // the loop is rounded up to whole 6 s scaling cycles (a stripe move every
+  // 3 s) with a short rest at the end, closed with the seam blocks in, when
+  // that rest stays under 2 s
+  const raw = seam.closeAt + groupSpan(seamBlocks, seamInD);
+  const whole = Math.ceil(raw / 6 - 1e-9) * 6;
+  const total = whole - raw <= 2.5 ? whole : raw;
   const tl: Timeline = { tOpen, tOpenEnd, tClose, tCloseEnd, total, span };
-  return finishScene(p, W, H, S, unit, rows, nTop, tl, seam, artist, ease, layout);
+  return finishScene(p, W, H, S, unit, rows, nTop, tl, seam, artist, layout);
 }
 
 /** The part of the scene build shared by every layout: row shapes, chains and floaters. */
@@ -745,7 +864,6 @@ function finishScene(
   tl: Timeline,
   seam: LabelClock,
   artist: LabelClock,
-  ease: (x: number) => number,
   layout: LayoutKind,
 ): Scene {
   const n = rows.length;
@@ -755,8 +873,6 @@ function finishScene(
 
   const moveMin = Math.max(0.2, Math.min(p.moveMin, p.moveMax));
   const moveMax = Math.max(moveMin, p.moveMax);
-  const travelMax = Math.max(0, p.blockTravel) * unit;
-  const travelMin = travelMax / 4;
   const edgeHi = clampInt(p.blockWidth, 0, 12);
   const edgeLo = Math.max(0, edgeHi - 2);
 
@@ -812,18 +928,55 @@ function finishScene(
     });
   }
 
-  // Block motion. The reference slit-scans show every block edge as a
-  // continuous curve: the pattern drifts sideways while its stripe width
-  // changes, scaling about a point that is not the seam (so left and right
-  // move differently), and no edge ever sits still. The edge blocks left
+  // Block motion. In the one-stage layouts every block edge is a continuous
+  // curve: the pattern drifts sideways while its stripe width changes,
+  // scaling about a point that is not the seam, and no edge ever sits still.
+  // In the reveal the pattern rests while the card is open (see below). The edge blocks left
   // standing in an open row grow and shrink on their own chain too.
+  const bars = layout === "row" && p.barScroll > 0;
   for (const r of rows) {
     const k = r.index;
     const rr = (key: number) => rand(p.blockSeed, k, key);
     const openAt = tOpen + r.delay;
     const closeAt = tClose + r.closeDelay;
     r.anchor = W * (0.3 + 0.4 * rr(7));
+    r.slideDir = rr(9) < 0.5 ? -1 : 1;
+    r.barDir = (k % 2 === 0 ? 1 : -1) * (rand(p.blockSeed, 0, 9) < 0.5 ? -1 : 1);
+    // stripe breathing: quarter-loop offsets, never the same as the row above
+    let q = Math.floor(rr(11) * 4) % 4;
+    const prev = k > 0 ? rows[k - 1].breathPhase * 4 : -1;
+    if (q === prev) q = (q + 1 + Math.floor(rr(12) * 3)) % 4;
+    r.breathPhase = q / 4;
+    if (bars) {
+      // the thin bars: scaling about the middle (no sideways sweep against
+      // the slide), and each bar 0.4 loop after the one before: always one
+      // zoomed in while the other is zoomed out (as in the AE bars), landing
+      // a beat apart rather than at the same moment
+      r.anchor = W / 2;
+      r.breathPhase = (Math.floor(rand(p.blockSeed, 0, 11) * 4) / 4 + 0.4 * k) % 1;
+    }
 
+    if (layout === "reveal") {
+      // As in the AE master the pattern rests while the card is open: the
+      // stripes widen once on the opening push and hold, narrow again on
+      // the closing push, and only drift sideways while the card is closed.
+      const d = pushSpan(p.duration, openAt, closeAt, T);
+      const wide = nextValue(r.m0, r.m0, 1, 3, rr(3));
+      const settled = closeAt + d;
+      r.widthKeys = [
+        { t: openAt, v: r.m0, push: true },
+        { t: openAt + d, v: wide },
+        { t: closeAt, v: wide, push: true },
+        { t: settled, v: r.m0 },
+        { t: openAt + T, v: r.m0 },
+      ];
+      // no sideways nudges: the stripe scaling carries the motion
+      r.shiftKeys = [{ t: 0, v: 0 }, { t: T, v: 0 }];
+      r.slideGate = slideGate(T, openAt, closeAt, d, closeSpan(p.duration, d));
+      r.edgeL = intChain(T, edgeLo, edgeHi, moveMin, moveMax, (i) => rr(7000 + i));
+      r.edgeR = intChain(T, edgeLo, edgeHi, moveMin, moveMax, (i) => rr(8000 + i));
+      continue;
+    }
     const keys: Key[] = [{ t: openAt, v: r.m0 }];
     let v = r.m0;
     const openSpan = closeAt - openAt;
@@ -844,7 +997,8 @@ function finishScene(
     keys.push({ t: Math.min(closeAt + p.duration, openAt + T), v: r.m0 });
     keys.push({ t: openAt + T, v: r.m0 });
     r.widthKeys = keys;
-    r.shiftKeys = driftChain(T, moveMin, moveMax, travelMin, travelMax, rr);
+    // no sideways nudges: the stripe scaling carries the motion
+    r.shiftKeys = [{ t: 0, v: 0 }, { t: T, v: 0 }];
     r.edgeL = intChain(T, edgeLo, edgeHi, moveMin, moveMax, (i) => rr(7000 + i));
     r.edgeR = intChain(T, edgeLo, edgeHi, moveMin, moveMax, (i) => rr(8000 + i));
   }
@@ -873,7 +1027,8 @@ function finishScene(
       const r = hosts[j % hosts.length];
       const k = r.index;
       const reach = Math.min(W / 2 - r.remL * unit, W / 2 - r.remR * unit);
-      const fr = (key: number) => rand(p.blockSeed, k, seedBase + j * 100 + key);
+      // Floaters seed 0 = the floaters the Block seed gives; any other value reshuffles only the floaters
+      const fr = (key: number) => rand(p.blockSeed + Math.round(p.floatSeed || 0) * 7919, k, seedBase + j * 100 + key);
       const x0 = -reach * 0.8 + reach * 1.6 * fr(1);
       const size = (i: number) => (fr(40 + i) < 0.35 ? 0 : fmin + fr(41 + i * 7) * (fmax - fmin));
       const wk: Key[] = [{ t: 0, v: size(0) }];
@@ -905,51 +1060,86 @@ function finishScene(
   if (layout === "reveal") {
     // the artist group is fully in once its last block has slid in; the
     // state holds until the first row or label starts leaving
-    const artistBlocks = (timeLabel(p) ? 1 : 0) + wordsOf(p.artist) + (p.artist.trim() && p.artist2.trim() ? 1 + wordsOf(p.artist2) : 0) + wordsOf(p.stage);
+    const artistBlocks = lineSlots(artistLines(p)).n;
     const start = Math.max(tl.tOpenEnd, artist.openAt + (Math.max(1, artistBlocks) - 1) * artist.openStagger + artist.openD);
     const end = Math.min(tl.tClose, artist.closeAt);
     if (end > start) keyframes = { start, end };
   }
-  return { W, H, S, unit, rows, tl, layout, seam, artist, ease, labelEase: bezierEase(LABEL_EASING), keyframes };
+  return {
+    W, H, S, unit, rows, tl, layout, seam, artist,
+    rowEase: influenceEase(p.easeRowOut, p.easeRowIn),
+    textEase: influenceEase(p.easeTextOut, p.easeTextIn),
+    textExitEase: influenceEase(p.easeTextExitOut, p.easeTextExitIn),
+    driftEase: influenceEase(p.easeDriftOut, p.easeDriftIn),
+    slide: (Math.max(0, p.slide) / 1080) * S,
+    breath: Math.max(0, p.breath) / 100,
+    barScroll: layout === "row" ? Math.max(0, p.barScroll) * unit : 0,
+    barSlide: (30 / 1080) * S,
+    typePush: Math.max(0, p.typePush) * unit,
+    typeY: clamp01(p.labelY) * H + 0.1 * S,
+    seamSlots: lineSlots([wordsOf(p.stage), wordsOf(p.day)]),
+    artistSlots: lineSlots(artistLines(p)),
+    nameBlocks: {
+      first: (iconInline(p) ? 1 : 0) + topLine(p).length,
+      count: wordsOf(p.artist),
+    },
+    keyframes,
+  };
 }
 
 /**
  * Eased 0..1 for a time fraction. Long-tailed curves spend their last frames
- * on sub-pixel motion, so the ends snap; overshoot is clamped so hole, labels
- * and block widths always share one curve.
+ * on sub-pixel motion, so an end that lands at speed 0 snaps; an end with
+ * influence 0 keeps its speed and never snaps (0 / 0 is truly linear).
  */
-function eased(scene: Scene, u: number, curve: (x: number) => number = scene.ease): number {
-  if (u <= 0.004) return 0;
-  if (u >= 0.996) return 1;
-  return clamp01(curve(u));
+export function influenceEase(out: number, inn: number): (x: number) => number {
+  const curve = bezierEase(influenceBezier(out, inn));
+  const snapStart = out > 0 ? 0.004 : 0;
+  const snapEnd = inn > 0 ? 0.996 : 1;
+  return (u: number) => {
+    if (u <= snapStart) return 0;
+    if (u >= snapEnd) return 1;
+    return clamp01(curve(u));
+  };
 }
 
+/**
+ * A move in, a hold, a move back out. `mirror`: the way out is the way in
+ * played in reverse (the rows); otherwise the way out plays the same curve
+ * forward (the label blocks, as in the AE master). `entranceFirst` false: the
+ * first move is the exit (the seam blocks, visible while the progress is 0).
+ */
 function segmentProgress(
-  scene: Scene,
   t: number,
   openAt: number,
   openD: number,
   closeAt: number,
   closeD: number,
-  curve: (x: number) => number = scene.ease,
+  curve: (x: number) => number,
+  entranceFirst = true,
+  mirror = true,
+  exitCurve: (x: number) => number = curve, // the way out's own curve (unmirrored moves only)
 ): number {
+  const ease = (u: number, entrance: boolean) => (entrance ? curve(u) : mirror ? 1 - curve(1 - u) : exitCurve(u));
   if (t < openAt) return 0;
-  if (t < openAt + openD) return eased(scene, (t - openAt) / openD, curve);
+  if (t < openAt + openD) return ease((t - openAt) / openD, entranceFirst);
   if (t < closeAt) return 1;
-  if (t < closeAt + closeD) return 1 - eased(scene, (t - closeAt) / closeD, curve);
+  if (t < closeAt + closeD) return 1 - ease((t - closeAt) / closeD, !entranceFirst);
   return 0;
 }
 
 /** 0..1 for block g of a label group of n blocks: in one after another, out in reverse. */
-function blockProgress(scene: Scene, c: LabelClock, g: number, n: number, t: number): number {
+function blockProgress(scene: Scene, c: LabelClock, g: number, n: number, t: number, entranceFirst = true): number {
   return segmentProgress(
-    scene,
     t,
     c.openAt + g * c.openStagger,
     c.openD,
     c.closeAt + (n - 1 - g) * c.closeStagger,
     c.closeD,
-    scene.labelEase,
+    scene.textEase,
+    entranceFirst,
+    false,
+    scene.textExitEase,
   );
 }
 
@@ -958,13 +1148,73 @@ export function rowProgress(scene: Scene, p: Params, r: RowSpec, t: number): num
   if (scene.layout === "side" || scene.layout === "full") return 1;
   if (scene.layout !== "reveal") return 0;
   return segmentProgress(
-    scene,
     t,
     scene.tl.tOpen + r.delay,
     p.duration,
     scene.tl.tClose + r.closeDelay,
     p.duration,
+    scene.rowEase,
   );
+}
+
+/**
+ * The pattern's push: as a row opens, each half of the pattern rides its
+ * hole edge outward on its own longer, softer glide (twice the opening, long
+ * tail), carrying `push` % further than the edge before it settles. The
+ * closing pushes it back the same way: it starts with the bars and keeps
+ * easing in after they land (the glide played forward, not reversed).
+ * Returns the factor on the hole width.
+ */
+const PUSH_EASE = influenceEase(45, 95);
+const PUSH_CLOSE_EASE = influenceEase(45, 80);
+/** How far ahead of the name boxes (s) the pattern reacts to them. */
+const TYPE_PUSH_LEAD = 0.2;
+/** The pattern reactions play their boxes' motion this many times slower (where there is room). */
+const REACT_STRETCH = 1;
+/** The pattern reactions follow their boxes smoothed over this window (s): a little more time, a gentler peak. */
+const TYPE_PUSH_SMOOTH = 0.7;
+/** A box progress averaged around t (triangular weights), so the reaction takes a little longer and moves more smoothly. */
+function smoothed(fn: (t: number) => number, t: number): number {
+  const N = 8;
+  let sum = 0;
+  let wsum = 0;
+  for (let i = -N; i <= N; i++) {
+    const w = N + 1 - Math.abs(i);
+    sum += w * fn(t + (i / N) * (TYPE_PUSH_SMOOTH / 2));
+    wsum += w;
+  }
+  return sum / wsum;
+}
+const BREATH_EASE = influenceEase(85, 85);
+const BAR_EASE = influenceEase(75, 75);
+/** Where a thin bar's burst is centred, as a loop fraction after its scaling move's end (negative: during its landing). */
+const BURST_AFTER = -0.03;
+
+/**
+ * The closing glide: shorter than the opening one and with a less drawn-out
+ * landing, so the pattern settles with the rows, before the stage and day
+ * boxes come back in.
+ */
+function closeSpan(duration: number, d: number): number {
+  return Math.min(d, 1.25 * duration);
+}
+
+/** The push glide's length: twice the opening, never longer than the open or the closed time. */
+function pushSpan(duration: number, openAt: number, closeAt: number, T: number): number {
+  const room = Math.min(closeAt - openAt, T - (closeAt - openAt)) - 0.02;
+  return Math.max(0.05, Math.min(2 * duration, room));
+}
+export function rowPush(scene: Scene, p: Params, r: RowSpec, t: number): number {
+  if (scene.layout === "side" || scene.layout === "full") return 1;
+  if (scene.layout !== "reveal") return 0;
+  const T = scene.tl.total;
+  const openAt = scene.tl.tOpen + r.delay;
+  const closeAt = scene.tl.tClose + r.closeDelay;
+  const d = pushSpan(p.duration, openAt, closeAt, T);
+  const gain = 1 + Math.max(0, p.push) / 100;
+  // the closing glide may run on past the loop point: it continues at the start
+  const tt = t < openAt ? t + T : t;
+  return gain * segmentProgress(tt, openAt, d, closeAt, closeSpan(p.duration, d), PUSH_EASE, true, false, PUSH_CLOSE_EASE);
 }
 
 /** Evaluate a keyframe chain that covers one loop starting at keys[0].t. */
@@ -978,20 +1228,239 @@ export function evalChain(scene: Scene, keys: Key[], t: number): number {
     const b = keys[i + 1];
     if (tt >= a.t && tt < b.t) {
       if (b.v === a.v) return a.v;
-      return a.v + (b.v - a.v) * eased(scene, (tt - a.t) / (b.t - a.t));
+      const u = (tt - a.t) / (b.t - a.t);
+      // a row's closing width change rides the hole: the row curve reversed
+      const k = a.close ? 1 - scene.rowEase(1 - u) : a.push ? PUSH_EASE(u) : scene.driftEase(u);
+      return a.v + (b.v - a.v) * k;
     }
   }
   return keys[keys.length - 1].v;
 }
 
 /** Stripe width multiplier (1..3, fractional while moving) at time t. */
+/** One scaling move as a fraction of the loop. */
+function breathSpan(scene: Scene): number {
+  return breathCycles(scene) > 1 ? 0.5 : 0.4;
+}
+/** Grow-and-shrink cycles per loop: about one every 6 s (a move every ~3 s), or one per loop when FAST_SCALING is off for the layout. */
+const FAST_SCALING = { reveal: true, side: true, full: true, row: true, page: true, none: false } as Record<LayoutKind, boolean>;
+function breathCycles(scene: Scene): number {
+  const T = scene.tl.total;
+  if (!FAST_SCALING[scene.layout]) return 1;
+  // a scaling move about every 3 s (a grow-and-shrink cycle every ~6 s)
+  return Math.max(1, Math.round(T / 6));
+}
+
 export function rowMultiplier(scene: Scene, r: RowSpec, t: number): number {
-  return evalChain(scene, r.widthKeys, t);
+  if (scene.breath <= 0) return evalChain(scene, r.widthKeys, t);
+  // Stripe breathing, as in the pattern masters: every row's stripes grow to
+  // (1 + breath) times their width and back once per loop on long soft
+  // S-curves (influence 85 / 85, 40 % of the loop each, 30 % for the thin
+  // bars, holds between),
+  // the rows a quarter or half loop apart, so the slices scale out of step.
+  const T = scene.tl.total;
+  const lo = r.m0 >= 3 ? 1.5 : 1;
+  if (T <= 0) return lo;
+  // the stripes scale every 2 s, as in the AE masters (back-to-back moves,
+  // a whole number of cycles per loop)
+  const cycles = breathCycles(scene);
+  const u = ((((t / T) * cycles + r.breathPhase) % 1) + 1) % 1;
+  const a = breathSpan(scene);
+  let k: number;
+  if (u < a) k = BREATH_EASE(u / a);
+  else if (u < 0.5) k = 1;
+  else if (u < 0.5 + a) k = 1 - BREATH_EASE((u - 0.5) / a);
+  else k = 0;
+  return lo * (1 + scene.breath * k);
 }
 
 /** Sideways drift of the row's pattern (px at 1x) at time t. */
 export function rowShift(scene: Scene, r: RowSpec, t: number): number {
-  return evalChain(scene, r.shiftKeys, t);
+  return evalChain(scene, r.shiftKeys, t) + rowSlide(scene, r, t) + rowSeamKick(scene, r, t);
+}
+
+/**
+ * The rows react to the stage and day boxes on the seam too, a bit less than
+ * to the name (SEAM_KICK of the type push, the same timing): as those boxes come in at the end
+ * of the loop the rows by the seam kick sideways, neighbours in opposite
+ * directions, a beat ahead of the boxes like the name reaction, and they
+ * slide back as the boxes fold out at the start. The boxes are in at the loop
+ * point, so the loop stays seamless.
+ */
+const SEAM_KICK = 0.7;
+export function rowSeamKick(scene: Scene, r: RowSpec, t: number): number {
+  if (scene.layout !== "reveal" || scene.typePush <= 0 || scene.seamSlots.slots.length <= 0) return 0;
+  const yc = (r.y0 + r.y1) / 2;
+  const weight = Math.exp(-(((yc - scene.H / 2) / (0.14 * scene.H)) ** 2));
+  if (weight < 0.02) return 0;
+  const m = scene.seam;
+  const { slots, n: N } = scene.seamSlots;
+  const T = scene.tl.total;
+  const V = (x: number) => {
+    // before its first fold-out and after its last landing the seam is shown
+    let sum = 0;
+    for (const g of slots) sum += 1 - blockProgress(scene, m, g, N, x, false);
+    return sum / slots.length;
+  };
+  // the folding out (start) and coming back in (end), each played slower
+  // around its middle, as far as the time between them leaves room; the
+  // coming in runs on across the loop point
+  const spanOut = (N - 1) * m.openStagger + m.openD;
+  const spanIn = (N - 1) * m.closeStagger + m.closeD;
+  const cOut = m.openAt + spanOut / 2;
+  const cIn = m.closeAt + spanIn / 2;
+  const half = (spanOut + spanIn) / 2;
+  const f = Math.max(1, Math.min(REACT_STRETCH, (cIn - cOut - 0.1) / half, (cOut + T - cIn - 0.1) / half));
+  const wrap = (d: number) => ((((d + T / 2) % T) + T) % T) - T / 2; // signed distance within one loop
+  const slow = (x: number) => {
+    const dIn = wrap(x - cIn);
+    const dOut = wrap(x - cOut);
+    return Math.abs(dIn) < Math.abs(dOut) ? V(cIn + dIn / f) : V(cOut + dOut / f);
+  };
+  const shown = smoothed(slow, t + TYPE_PUSH_LEAD);
+  const dir = r.index % 2 === 0 ? 1 : -1;
+  return dir * SEAM_KICK * scene.typePush * weight * shown;
+}
+
+/**
+ * The constant slide under the eased moves: as in the AE master the pattern
+ * never comes to a dead stop. It covers a whole number of stripe pairs per
+ * loop (at the stripe width on the loop point), so the loop stays seamless.
+ */
+/**
+ * The constant slide rests while a row's pattern is pushed: it eases out just
+ * before a push starts and back in once the glide has landed, so a half
+ * pushed against the slide never stops and turns around. Returned as the
+ * slide's cumulative running time (as a loop share) at N + 1 even steps.
+ */
+function slideGate(T: number, openAt: number, closeAt: number, d: number, dClose = d): number[] {
+  const N = 256;
+  const smooth = (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+  const lead = 0.4; // the slide eases out this long before a push starts
+  const trail = 1.0; // and eases back in over this long once the glide has landed
+  // held spans: each push glide; joined when the gap between them is short
+  let spans: [number, number][] = [
+    [openAt - lead, openAt + d],
+    [closeAt - lead, closeAt + dClose],
+  ];
+  if (spans[1][0] - (spans[0][1] + trail) < 1.5) spans = [[spans[0][0], spans[1][1]]];
+  const held = (t: number, [a, b]: [number, number]) => Math.min(smooth((t - a) / lead), 1 - smooth((t - b) / trail));
+  const gate = (t: number) => {
+    let k = 0;
+    for (const sp of spans) for (const o of [-T, 0, T]) k = Math.max(k, held(t + o, sp));
+    return 1 - k;
+  };
+  const cum = [0];
+  for (let i = 1; i <= N; i++) cum.push(cum[i - 1] + gate(((i - 0.5) / N) * T) / N);
+  // last entry: the share of the loop the slide actually runs
+  return cum;
+}
+
+export function rowSlide(scene: Scene, r: RowSpec, t: number): number {
+  const T = scene.tl.total;
+  // the bars scroll inside the pattern (in stripes, not screen px), so the
+  // scaling stays centred on the screen instead of sweeping the bar sideways
+  if (scene.barScroll > 0) return barScroll(scene, r, t) * 2 * scene.unit * rowMultiplier(scene, r, t);
+  if (scene.slide <= 0 || T <= 0) return 0;
+  const pair = 2 * scene.unit * rowMultiplier(scene, r, 0);
+  let u = ((t % T) + T) % T / T;
+  let active = 1;
+  if (r.slideGate) {
+    // the slide only runs while the pattern isn't pushed: its distance comes
+    // from that running time, so its speed stays the same
+    const g = r.slideGate, x = u * (g.length - 1), i = Math.min(g.length - 2, Math.floor(x));
+    active = g[g.length - 1];
+    u = active > 0 ? (g[i] + (g[i + 1] - g[i]) * (x - i)) / active : 0;
+  }
+  const n = Math.round((scene.slide * T * active) / pair);
+  if (n <= 0) return 0;
+  return r.slideDir * n * pair * u;
+}
+
+/**
+ * The thin bars (as in the AE bar posters): neighbouring bars slide slowly
+ * in opposite directions, and twice a loop each one speeds up for about a
+ * second, scrolls on a stretch the same way and slows down again (75 / 75),
+ * in the pause between its two scaling moves. Slide and bursts add up to a
+ * whole number of stripe pairs per loop, so the loop stays seamless.
+ */
+function barScroll(scene: Scene, r: RowSpec, t: number): number {
+  // in stripe pairs of the pattern (rowSlide turns it into px at the
+  // current width): a whole number of pairs per loop keeps it seamless
+  const T = scene.tl.total;
+  if (T <= 0) return 0;
+  const pairAt = (tt: number) => 2 * scene.unit * rowMultiplier(scene, r, tt);
+  const lt = ((t % T) + T) % T;
+  const w = 0.18; // a burst takes this share of the loop (about 2 s in an 11 s loop), its ends overlapping the scaling's
+  // bursts centred in the bar's two pauses between its scaling moves, each
+  // covering about the same distance on screen whatever the stripe width
+  // (in half pairs; the slide rounds the loop up to whole pairs)
+  const a = breathSpan(scene);
+  // alternate bars burst a little early or late in their pauses, so the two
+  // bars' bursts don't come together
+  const lean = (r.index % 2 ? 1 : -1) * 0.04;
+  // each burst starts while the scaling move before it is still landing, so
+  // the scroll takes over as the zoom settles (the two motions overlap)
+  const bursts = [a + BURST_AFTER, a + 0.5 + BURST_AFTER].map((c) => {
+    const start = (((c + lean - w / 2 - r.breathPhase) % 1) + 1) % 1; // burst start in loop time
+    const m = Math.max(0.5, Math.round((2 * scene.barScroll) / pairAt((start + w / 2) * T)) / 2);
+    return { start, m };
+  });
+  const frac = (bursts[0].m + bursts[1].m) % 1;
+  const n = Math.max(1, Math.round((scene.barSlide * T) / pairAt(0) + frac)) - frac;
+  let pairs = n * (lt / T);
+  for (const { start, m } of bursts) {
+    const into = lt / T - start;
+    if (into >= w) pairs += m;
+    else if (into >= 0) pairs += m * BAR_EASE(into / w);
+    else if (into + 1 < w) pairs += m * (BAR_EASE((into + 1) / w) - 1); // a burst running over the loop point
+  }
+  return r.barDir * pairs;
+}
+
+/**
+ * The slices by the artist name open a little further while it comes in, as
+ * if the boxes push them, and settle back as it goes: on the text curve over
+ * the group's opening, strongest at the name's height. px at 1x, per side.
+ */
+export function rowTypeOpen(scene: Scene, r: RowSpec, t: number): number {
+  if (scene.layout !== "reveal" || scene.typePush <= 0) return 0;
+  const yc = (r.y0 + r.y1) / 2;
+  const weight = Math.exp(-(((yc - scene.typeY) / (0.14 * scene.H)) ** 2));
+  if (weight < 0.02) return 0;
+  // locked to the name: the slices move as the name's boxes open and close
+  // (their average progress), a beat ahead (TYPE_PUSH_LEAD) so they read as
+  // pushed by the boxes rather than trailing them
+  const nb = scene.nameBlocks;
+  const { slots: all, n } = scene.artistSlots;
+  const named = nb.count > 0 ? all.slice(nb.first, nb.first + nb.count) : all;
+  const slots = named.length ? named : [0];
+  const c = scene.artist;
+  const P = (x: number) => {
+    let sum = 0;
+    for (const g of slots) sum += blockProgress(scene, c, g, n, x);
+    return sum / slots.length;
+  };
+  // the name's opening and closing, each played REACT_STRETCH times slower
+  // around its middle (so it starts earlier, ends later and still peaks with
+  // the boxes), as far as the hold in between leaves room
+  const s0 = Math.min(...slots);
+  const s1 = Math.max(...slots);
+  const sOpen = c.openAt + s0 * c.openStagger;
+  const spanOpen = (s1 - s0) * c.openStagger + c.openD;
+  const sClose = c.closeAt + (n - 1 - s1) * c.closeStagger;
+  const spanClose = (s1 - s0) * c.closeStagger + c.closeD;
+  const cOpen = sOpen + spanOpen / 2;
+  const cClose = sClose + spanClose / 2;
+  const f = Math.max(1, Math.min(REACT_STRETCH, (cClose - cOpen - 0.1) / ((spanOpen + spanClose) / 2)));
+  const slow = (x: number) => (x < (cOpen + cClose) / 2 ? P(cOpen + (x - cOpen) / f) : P(cClose + (x - cClose) / f));
+  return scene.typePush * weight * smoothed(slow, t + TYPE_PUSH_LEAD);
+}
+
+/** Half-hole extent (px at 1x) without the edge blocks' steps: what pushes the pattern. */
+export function rowHoleBase(scene: Scene, r: RowSpec, side: "L" | "R"): number {
+  const rem = side === "L" ? r.remL : r.remR;
+  return Math.max(0, scene.W / 2 - rem * scene.unit) * (side === "L" ? r.vigL : r.vigR);
 }
 
 /** Half-hole extent (px at 1x) of one side when the row is fully open, at time t. */
@@ -1570,9 +2039,20 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
     const pr = rowProgress(scene, p, r, t);
     const mult = rowMultiplier(scene, r, t);
     const w = Math.max(1, unit * mult);
-    const holeL = rowHole(scene, r, "L", t) * scale * pr;
-    const holeR = rowHole(scene, r, "R", t) * scale * pr;
+    // the name pushes the slices beside it: the stripes inside slide out by
+    // the full push, the slices themselves give way by up to half their
+    // width (they stay in view, so the reaction shows)
+    const typeOpen = rowTypeOpen(scene, r, t) * scale * pr;
+    const typeK = scene.typePush > 0 ? rowTypeOpen(scene, r, t) / scene.typePush : 0;
+    const baseL = rowHole(scene, r, "L", t) * scale * pr;
+    const baseR = rowHole(scene, r, "R", t) * scale * pr;
+    const holeL = baseL + 0.5 * Math.max(0, cx - baseL) * typeK * pr;
+    const holeR = baseR + 0.5 * Math.max(0, W - cx - baseR) * typeK * pr;
     const origin = (r.anchor + rowShift(scene, r, t)) * scale;
+    const push = rowPush(scene, p, r, t);
+    // the pattern rides the hole's own edge, not the edge blocks stepping in it
+    const pushL = rowHoleBase(scene, r, "L") * scale * push + typeOpen;
+    const pushR = rowHoleBase(scene, r, "R") * scale * push + typeOpen;
     const y0 = Math.round(r.y0 * scale);
     const y1 = Math.round(r.y1 * scale);
     const h = y1 - y0;
@@ -1607,11 +2087,11 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
         ctx.restore();
       }
     }
-    // each half carries its pattern along with its hole edge
+    // each half's pattern is pushed out by its hole edge and glides on past it
     shapeRow = r.index;
     shapeFloater = false;
-    drawStripes(ctx, origin - holeL, 0, left, y0, h, w, r.phase, cA, cB);
-    drawStripes(ctx, origin + holeR, right, W, y0, h, w, r.phase, cA, cB);
+    drawStripes(ctx, origin - pushL, 0, left, y0, h, w, r.phase, cA, cB);
+    drawStripes(ctx, origin + pushR, right, W, y0, h, w, r.phase, cA, cB);
     if (r.floaters.length && right - left > 1 && trail > 0.02) {
       ctx.save();
       ctx.beginPath();
@@ -1667,7 +2147,6 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
     const seamStage = layoutRow(ctx, words(p.stage, false), STYLE_BIG, S, gap, maxW, fam);
     const seamDay = layoutRow(ctx, words(p.day, true), STYLE_SMALL, S, gap, maxW, fam);
     const seamRows = [seamStage, seamDay].filter((r): r is LabelRow => !!r);
-    const seamN = seamRows.reduce((a, r) => a + r.blocks.length, 0);
     const seamH = seamRows.reduce((a, r) => a + r.h, 0) + gap * (seamRows.length - 1);
     let y = H / 2 - seamH / 2;
     let seamFirst = 0;
@@ -1675,21 +2154,23 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
       const base = seamFirst;
       specKey = "seam";
       specStacked = false;
-      drawRow(ctx, r, cx, y, gap, (i) => 1 - blockProgress(scene, scene.seam, base + i, seamN, t), dirOf(base), slide, colors, fam);
+      const ss = scene.seamSlots;
+      drawRow(ctx, r, cx, y, gap, (i) => 1 - blockProgress(scene, scene.seam, ss.slots[base + i] ?? base + i, ss.n, t, false), dirOf(base), slide, colors, fam);
       seamFirst += r.blocks.length;
       y += r.h + gap;
     }
 
-    const times = layoutRow(ctx, timeLabel(p) ? [timeLabel(p)] : [], STYLE_TINY, S, gap, maxW, fam);
+    const times = layoutRow(ctx, topLine(p), STYLE_TINY, S, gap, maxW, fam);
     const nameRows = artistRows(ctx, p, S, gap, maxW, fam);
-    const stage2 = layoutRow(ctx, words(p.stage, true), STYLE_SMALL, S, gap, maxW, fam);
+    const under = [layoutRow(ctx, words(p[belowKey(p)], true), STYLE_SMALL, S, gap, maxW, fam)];
     const iconInl = iconInline(p) ? iconRow(ctx, S, fam) : null;
-    const groupRows = [iconInl, times, ...nameRows, stage2].filter((r): r is LabelRow => !!r);
+    const groupRows = [iconInl, times, ...nameRows, ...under].filter((r): r is LabelRow => !!r);
     if (groupRows.length) {
       const gh = groupRows.reduce((a, r) => a + r.h, 0) + gap * (groupRows.length - 1);
       const gw = groupRows.reduce((a, r) => Math.max(a, r.w), 0);
       const top = Math.max(0, Math.min(H - gh, clamp01(p.labelY) * H));
-      const nBlocks = groupRows.reduce((a, r) => a + r.blocks.length, 0);
+      // the icon may be missing (not loaded yet) while the scene counts it
+      const slotSkip = iconInline(p) && !iconInl ? 1 : 0;
       let first = 0;
       let yy = top;
       let anyOpen = 0;
@@ -1704,7 +2185,9 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
           yy,
           gap,
           (i) => {
-            const pr = blockProgress(scene, scene.artist, base + i, nBlocks, t);
+            const as = scene.artistSlots;
+            const k = base + i + slotSkip;
+            const pr = blockProgress(scene, scene.artist, as.slots[k] ?? k, as.n, t);
             anyOpen = Math.max(anyOpen, pr);
             return pr;
           },

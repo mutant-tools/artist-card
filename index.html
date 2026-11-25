@@ -78,6 +78,13 @@
             </div>
           </div>
           <label class="row field" id="stageRow"><span class="lbl">Stage</span><input type="text" id="stageText" spellcheck="false" /></label>
+          <div class="row field" id="lockupRow" title="Where the stage and the day sit once the card is open; the closed card keeps the stage and the day">
+            <span class="lbl">Lockup</span>
+            <div class="seg" id="lockupSeg">
+              <button type="button" class="btn active" data-lockup="stage" title="Time, name, stage">Stage below</button>
+              <button type="button" class="btn" data-lockup="day" title="Time, name, day">Day below</button>
+            </div>
+          </div>
           <div class="row field tall" id="infoRow">
             <span class="lbl">Info</span>
             <div class="with-btn para">
@@ -210,6 +217,7 @@
 
         <section class="group" id="timingGroup"></section>
 
+
         <section class="group" id="shapeGroup">
           <div class="seg" id="orderSeg">
             <button type="button" class="btn" data-order="top">Top</button>
@@ -230,7 +238,7 @@
             <button type="button" class="btn" id="loadBtn" title="Open a .touquet file (or drop one on the preview)">Load</button>
           </div>
           <div class="seg">
-            <button type="button" class="btn" id="exportMp4Btn" title="One full loop as H.264 MP4, 1080 wide at 60 fps">Export MP4</button>
+            <button type="button" class="btn" id="exportMp4Btn" title="One full loop as H.264 MP4, 1080 wide at 30 fps">Export MP4</button>
             <button type="button" class="btn" id="exportPngBtn" title="The frame shown in the preview; transparent where there is no photo">Export PNG</button>
           </div>
           <div class="seg">

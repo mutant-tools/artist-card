@@ -22,10 +22,14 @@ var P = {
   opening: clampN(sl("Opening %"), 0, 100), vignette: clampN(sl("Vignette %"), 0, 100), faith: clampN(sl("Faith %"), 0, 100),
   falloffX: pt("Falloff centre", [W / 2, H / 2])[0] / W, falloffY: pt("Falloff centre", [W / 2, H / 2])[1] / H, falloffR: Math.max(1, sl("Falloff radius")) / SS, irregularity: clampN(sl("Irregularity %"), 0, 100), shapeSeed: Math.round(sl("Shape seed")),
   duration: Math.max(0.1, sl("Opening time")), stagger: Math.max(0, sl("Rows stagger")), staggerOrder: ORDER,
-  easing: [0.7, 0.1, 0.1, 0.9], holdClosed: Math.max(0, sl("Hold closed")), holdOpen: Math.max(0, sl("Hold open")),
+  easeRowOut: clampN(sl("Rows ease out"), 0, 100), easeRowIn: clampN(sl("Rows ease in"), 0, 100),
+  easeTextOut: clampN(sl("Text ease out"), 0, 100), easeTextIn: clampN(sl("Text ease in"), 0, 100),
+  easeDriftOut: clampN(sl("Drift ease out"), 0, 100), easeDriftIn: clampN(sl("Drift ease in"), 0, 100),
+  push: Math.max(0, sl("Pattern push")), slide: Math.max(0, sl("Constant slide")),
+  holdClosed: Math.max(0, sl("Hold closed")), holdOpen: Math.max(0, sl("Hold open")),
   labelY: clampN(sl("Label Y %"), 0, 100) / 100
 };
-var LABEL_EASING = [0.45, 0.05, 0.2, 1], LABEL_DURATION = 1, CAP = 0.694, D540 = 540;
+var LABEL_DURATION = 1.4, CAP = 0.694, D540 = 540;
 var STYLE_BIG = { fs: 72 / D540, padTop: 12 / D540, padBottom: 24 / D540, padX: 3 / D540 };
 var STYLE_SMALL = { fs: 36 / D540, padTop: 18 / D540, padBottom: 18 / D540, padX: 3 / D540 };
 var STYLE_TINY = { fs: 18 / D540, padTop: 18 / D540, padBottom: 18 / D540, padX: 3 / D540 };
@@ -67,7 +71,17 @@ function bezierEase(b) {
     return calc(t, y1, y2);
   };
 }
-var EASE = bezierEase(P.easing), LEASE = bezierEase(LABEL_EASING);
+// AE influences as a curve: speed 0 at a key that has influence; an end
+// with influence 0 keeps its speed and never snaps (0 / 0 is linear)
+function influenceEase(out, inn) {
+  var curve = bezierEase([clamp01(out / 100), 0, 1 - clamp01(inn / 100), 1]);
+  var snapStart = out > 0 ? 0.004 : 0, snapEnd = inn > 0 ? 0.996 : 1;
+  return function (u) { if (u <= snapStart) return 0; if (u >= snapEnd) return 1; return clamp01(curve(u)); };
+}
+var PUSH_EASE = influenceEase(45, 95);
+// the push glide's length: twice the opening, never longer than the open or the closed time
+function pushSpan(openAt, closeAt, T) { var room = Math.min(closeAt - openAt, T - (closeAt - openAt)) - 0.02; return Math.max(0.05, Math.min(2 * P.duration, room)); }
+var ROW_EASE = influenceEase(P.easeRowOut, P.easeRowIn), TEXT_EASE = influenceEase(P.easeTextOut, P.easeTextIn), DRIFT_EASE = influenceEase(P.easeDriftOut, P.easeDriftIn);
 
 // ---- chains ----
 function stepWithin(cur, lo, hi, r) {
@@ -115,22 +129,31 @@ function intChain(T, lo, hi, moveMin, moveMax, r) {
   keys.push({ t: T, v: start });
   return keys;
 }
-function easedU(u, curve) { if (u <= 0.004) return 0; if (u >= 0.996) return 1; return clamp01(curve(u)); }
 function evalChain(keys, t) {
   if (keys.length < 2) return keys.length ? keys[0].v : 0;
   var t0 = keys[0].t, period = keys[keys.length - 1].t - t0;
   var tt = period > 0 ? t0 + ((((t - t0) % period) + period) % period) : t0;
   for (var i = 0; i < keys.length - 1; i++) {
     var a = keys[i], b = keys[i + 1];
-    if (tt >= a.t && tt < b.t) { if (b.v === a.v) return a.v; return a.v + (b.v - a.v) * easedU((tt - a.t) / (b.t - a.t), EASE); }
+    if (tt >= a.t && tt < b.t) {
+      if (b.v === a.v) return a.v;
+      var u = (tt - a.t) / (b.t - a.t);
+      return a.v + (b.v - a.v) * (a.close ? 1 - ROW_EASE(1 - u) : a.push ? PUSH_EASE(u) : DRIFT_EASE(u));
+    }
   }
   return keys[keys.length - 1].v;
 }
-function segmentProgress(t, openAt, openD, closeAt, closeD, curve) {
+// mirror: the way out is the way in played in reverse (the rows); otherwise
+// the way out plays the same curve forward (the label blocks). entranceFirst
+// false: the first move is the exit (the seam blocks, visible at progress 0)
+function segmentProgress(t, openAt, openD, closeAt, closeD, curve, entranceFirst, mirror) {
+  if (entranceFirst === undefined) entranceFirst = true;
+  if (mirror === undefined) mirror = true;
+  function ez(u, entrance) { return entrance || !mirror ? curve(u) : 1 - curve(1 - u); }
   if (t < openAt) return 0;
-  if (t < openAt + openD) return easedU((t - openAt) / openD, curve);
+  if (t < openAt + openD) return ez((t - openAt) / openD, entranceFirst);
   if (t < closeAt) return 1;
-  if (t < closeAt + closeD) return 1 - easedU((t - closeAt) / closeD, curve);
+  if (t < closeAt + closeD) return 1 - ez((t - closeAt) / closeD, !entranceFirst);
   return 0;
 }
 
@@ -199,17 +222,19 @@ function buildScene() {
       var k = r.index;
       var rr = function (key) { return rand(p.blockSeed, k, key); };
       var openAt = tOpen + r.delay, closeAt = tClose + r.closeDelay;
-      var keys = [{ t: openAt, v: r.m0 }], v = r.m0, openSpan = closeAt - openAt;
-      var t = openAt + Math.min(moveMin + rr(100) * (moveMax - moveMin), openSpan * 0.6);
-      v = stepWithin(v, 1, 3, rr(3)); keys.push({ t: t, v: v });
-      var times = fillSpan(t, closeAt - t, moveMin, moveMax, function (i) { return rr(110 + i); });
-      for (var j = 0; j < times.length; j++) { v = stepWithin(v, 1, 3, rr(130 + j)); keys.push({ t: times[j], v: v }); }
-      v = nextValue(v, r.m0, 1, 3, rr(150));
-      keys.push({ t: closeAt, v: v });
-      keys.push({ t: Math.min(closeAt + p.duration, openAt + T), v: r.m0 });
-      keys.push({ t: openAt + T, v: r.m0 });
-      r.widthKeys = keys;
-      r.shiftKeys = driftChain(T, moveMin, moveMax, travelMin, travelMax, rr);
+      // as in the AE master the pattern rests while the card is open: the
+      // stripes widen once on the opening push and hold, narrow on the
+      // closing push, and only drift sideways while the card is closed
+      var d = pushSpan(openAt, closeAt, T);
+      var wide = nextValue(r.m0, r.m0, 1, 3, rr(3));
+      var closeEnd = closeAt + d;
+      r.widthKeys = [{ t: openAt, v: r.m0, push: true }, { t: openAt + d, v: wide }, { t: closeAt, v: wide, push: true }, { t: closeEnd, v: r.m0 }, { t: openAt + T, v: r.m0 }];
+      var closedSpan = openAt + T - closeEnd;
+      var drift = closedSpan > 0.2 ? driftChain(closedSpan, moveMin, moveMax, travelMin, travelMax, rr) : [{ t: 0, v: 0 }, { t: closedSpan, v: 0 }];
+      var sk = [];
+      for (var q = 0; q < drift.length; q++) sk.push({ t: drift[q].t + closeEnd, v: drift[q].v });
+      sk.push({ t: closeEnd + T, v: 0 });
+      r.shiftKeys = sk;
       r.edgeL = intChain(T, edgeLo, edgeHi, moveMin, moveMax, function (i) { return rr(7000 + i); });
       r.edgeR = intChain(T, edgeLo, edgeHi, moveMin, moveMax, function (i) { return rr(8000 + i); });
     })(r);
@@ -261,9 +286,30 @@ function buildScene() {
   return { rows: rows, tl: tl, seam: seam, artist: artist, floaters: floaters, nTop: nTop, seamBlocks: seamBlocks, artistBlocks: artistBlocks, chainsOf: chainsOf, floaterChains: floaterChains };
 }
 function loopTime(scene) { var T = scene.tl.total; return T > 0 ? ((time % T) + T) % T : 0; }
-function rowProgress(scene, r, t) { return segmentProgress(t, scene.tl.tOpen + r.delay, P.duration, scene.tl.tClose + r.closeDelay, P.duration, EASE); }
+function rowProgress(scene, r, t) { return segmentProgress(t, scene.tl.tOpen + r.delay, P.duration, scene.tl.tClose + r.closeDelay, P.duration, ROW_EASE); }
+// the constant slide under the eased moves: the pattern never comes to a dead
+// stop; a whole number of stripe pairs per loop keeps the loop seamless
+function rowSlide(scene, r, t) {
+  var T = scene.tl.total, speed = P.slide / 1080 * SS;
+  if (speed <= 0 || T <= 0) return 0;
+  var pair = 2 * UNIT * evalChain(r.widthKeys, 0);
+  var n = Math.max(1, Math.round(speed * T / pair));
+  var dir = rand(P.blockSeed, r.index, 9) < 0.5 ? -1 : 1;
+  return dir * n * pair * ((((t % T) + T) % T) / T);
+}
+function rowHoleBase(r, side) { return Math.max(0, W / 2 - (side === "L" ? r.remL : r.remR) * UNIT) * (side === "L" ? r.vigL : r.vigR); }
 function rowHole(r, side, t) { var rem = (side === "L" ? r.remL : r.remR) + evalChain(side === "L" ? r.edgeL : r.edgeR, t); return Math.max(0, W / 2 - rem * UNIT) * (side === "L" ? r.vigL : r.vigR); }
-function blockProgress(c, g, n, t) { return segmentProgress(t, c.openAt + g * c.openStagger, c.openD, c.closeAt + (n - 1 - g) * c.closeStagger, c.closeD, LEASE); }
+function blockProgress(c, g, n, t, entranceFirst) { return segmentProgress(t, c.openAt + g * c.openStagger, c.openD, c.closeAt + (n - 1 - g) * c.closeStagger, c.closeD, TEXT_EASE, entranceFirst, false); }
+// the pattern's push: each half glides out past its hole edge on a longer,
+// softer move (twice the opening), Pattern push % further; the closing
+// pushes it back the same way, easing on after the bars land
+function rowPush(scene, r, t) {
+  var T = scene.tl.total, openAt = scene.tl.tOpen + r.delay, closeAt = scene.tl.tClose + r.closeDelay;
+  var d = pushSpan(openAt, closeAt, T);
+  // the closing glide may run on past the loop point: it continues at the start
+  var tt = t < openAt ? t + T : t;
+  return (1 + P.push / 100) * segmentProgress(tt, openAt, d, closeAt, d, PUSH_EASE, true, false);
+}
 
 // Everything one row-half layer needs, from its name "Row T03 L".
 function rowState(name) {
@@ -275,12 +321,14 @@ function rowState(name) {
   var t = loopTime(scene), pr = rowProgress(scene, r, t), cx = W / 2;
   var mult = evalChain(r.widthKeys, t), w = Math.max(1, UNIT * mult);
   var holeL = rowHole(r, "L", t) * pr, holeR = rowHole(r, "R", t) * pr;
-  var origin = r.anchor + evalChain(r.shiftKeys, t);
+  var origin = r.anchor + evalChain(r.shiftKeys, t) + rowSlide(scene, r, t);
+  // the pattern rides the hole's own edge, not the edge blocks stepping in it
+  var push = rowPush(scene, r, t), pushL = rowHoleBase(r, "L") * push, pushR = rowHoleBase(r, "R") * push;
   var left = Math.round(cx - holeL), right = Math.round(cx + holeR);
   var colA = half === "top" ? colorOf("Top A") : colorOf("Bottom A"), colB = half === "top" ? colorOf("Top B") : colorOf("Bottom B");
   var y0 = Math.round(r.y0), y1 = Math.round(r.y1);
-  if (side === "L") return { on: true, y0: y0, y1: y1, y0exact: r.y0, h: y1 - y0, w: w, phase: r.phase, edge: origin - holeL, from: 0, to: left, right: right, colA: colA, colB: colB, t: t };
-  return { on: true, y0: y0, y1: y1, y0exact: r.y0, h: y1 - y0, w: w, phase: r.phase, edge: origin + holeR, from: right, to: W, right: right, colA: colA, colB: colB, t: t };
+  if (side === "L") return { on: true, y0: y0, y1: y1, y0exact: r.y0, h: y1 - y0, w: w, phase: r.phase, edge: origin - pushL, from: 0, to: left, right: right, colA: colA, colB: colB, t: t };
+  return { on: true, y0: y0, y1: y1, y0exact: r.y0, h: y1 - y0, w: w, phase: r.phase, edge: origin + pushR, from: right, to: W, right: right, colA: colA, colB: colB, t: t };
 }
 // Everything one floater layer needs, from its name "Floater 03".
 function floaterState(name) {

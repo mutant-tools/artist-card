@@ -44,6 +44,7 @@ import {
   type SpecShape,
   type StackKey,
   type StaggerOrder,
+  type Lockup,
 } from "./engine";
 import { exportMp4, exportPng, fontsReady, supportsVideoExport, type BeforeFrame } from "./export";
 import { loadLogo } from "./logo";
@@ -52,7 +53,7 @@ import { buildIllustratorSvg } from "./illustrator";
 import { audioPackets, loadAudioFile, playAudio, stopAudio, windowPeaks, type AudioTrack } from "./audio";
 import { importVideo, type VideoClip } from "./video";
 
-const FPS = 60; // frame counter, arrow-key stepping and MP4 export
+const FPS = 30; // frame counter, arrow-key stepping and MP4 export (the AE comps run at 30 fps)
 const TICKS_PER_SECOND = 15; // timeline tick pitch
 const EXPORT_SCALE = 1; // 1080 wide: 1080x1080, 1080x1350, 1080x1920
 
@@ -175,7 +176,7 @@ function parseHash(h: string): string {
   const def = flatten(DEFAULT_PARAMS);
   for (const [k, v] of q.entries()) {
     const freeKey = k.startsWith("free.");
-    if (!(k in def) && !freeKey) continue;
+    if (!(k in def) && !freeKey && k !== "easing") continue; // easing: an older link's row curve
     const value: unknown =
       k === "easing"
         ? v.split(",").map(Number)
@@ -441,6 +442,17 @@ function cycleSeg(id: string, dir: 1 | -1) {
   const i = btns.findIndex((b) => b.classList.contains("active"));
   btns[(i + dir + btns.length) % btns.length]?.click();
 }
+// Tab (or cmd-backslash) slides the settings panel out and back in, so the
+// card can be viewed bigger on small screens; a reload always brings it back
+const appEl = $<HTMLElement>("app");
+function setPanelHidden(hidden: boolean) {
+  appEl.classList.toggle("panel-hidden", hidden);
+}
+try {
+  localStorage.removeItem("panelHidden"); // an earlier build remembered it
+} catch {
+  /* ignore */
+}
 document.addEventListener("keydown", (e) => {
   const t = e.target as HTMLElement | null;
   const tag = t?.tagName ?? "";
@@ -448,6 +460,11 @@ document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey) {
     if (e.altKey) return;
     const k = e.key.toLowerCase();
+    if (k === "\\") {
+      e.preventDefault();
+      setPanelHidden(!appEl.classList.contains("panel-hidden"));
+      return;
+    }
     if (k === "a" && inField && (tag === "INPUT" || tag === "TEXTAREA")) {
       e.preventDefault();
       (t as HTMLInputElement | HTMLTextAreaElement).select();
@@ -475,6 +492,11 @@ document.addEventListener("keydown", (e) => {
   }
   if (inField) return;
   if (e.altKey) return;
+  if (e.key === "Tab" && !e.shiftKey) {
+    e.preventDefault();
+    setPanelHidden(!appEl.classList.contains("panel-hidden"));
+    return;
+  }
   if (e.key === "?") {
     e.preventDefault();
     helpEl.classList.toggle("pinned");
@@ -484,7 +506,7 @@ document.addEventListener("keydown", (e) => {
     helpEl.classList.remove("pinned");
     return;
   }
-  if (e.key >= "1" && e.key <= "4" && !e.shiftKey) {
+  if (e.key >= "1" && e.key <= "5" && !e.shiftKey) {
     e.preventDefault();
     document.querySelector<HTMLButtonElement>(`[data-preset="${e.key}"]`)?.click();
     return;
@@ -569,6 +591,8 @@ const PRESETS: Record<number, Partial<Params>> = {
   1: {},
   2: {
     layout: "side",
+    // the stripes scale every 2 s, as in the AE master: six moves per 12 s loop
+    loopLen: 12,
     rowsTop: 4,
     rowsBottom: 4,
     blockWidth: 3,
@@ -588,6 +612,8 @@ const PRESETS: Record<number, Partial<Params>> = {
   },
   3: {
     layout: "full",
+    // a 12 s loop: the stripes scale every 3 s
+    loopLen: 12,
     rowsTop: 4,
     rowsBottom: 4,
     blockWidth: 2,
@@ -600,14 +626,16 @@ const PRESETS: Record<number, Partial<Params>> = {
     stackY: EDGE,
     logo: "bottom",
     logoColor: "white",
-    colors: { ...DEFAULT_PARAMS.colors, topA: "#E90062", topB: "#70FFDF", bottomA: "#F3705D", bottomB: "#F99390" },
+    // colourway 29
+    colors: { ...DEFAULT_PARAMS.colors, topA: "#FDAA5B", topB: "#E88602", bottomA: "#3D06B7", bottomB: "#250240" },
+    floatSeed: 1,
     opening: 90,
     vignette: 100,
     faith: 100,
     irregularity: 0,
     falloffX: 0.5,
     falloffY: 0.5,
-    falloffR: 0.36,
+    falloffR: 0.58,
     imageX: 0.42,
   },
   4: {
@@ -622,6 +650,10 @@ const PRESETS: Record<number, Partial<Params>> = {
     stage: "",
     info: "Disponible en t\u00e9l\u00e9chargement !",
     infoSize: INFO_SIZES.m,
+    // the bars: a 12 s loop, the stripes scaling every 3 s
+    loopLen: 12,
+    // the minimal two-bar poster: slow opposite slides with eased bursts
+    barScroll: 8,
     stackAnchor: "top",
     stackY: EDGE,
     colors: { ...DEFAULT_PARAMS.colors, topA: "#8D5DF3", topB: "#0906B7", bottomA: "#FF63F4", bottomB: "#ED00A5" },
@@ -642,6 +674,9 @@ const PRESETS: Record<number, Partial<Params>> = {
     infoSize: INFO_SIZES.m,
     infoW: 463 / 540,
     bgColor: "bottomB",
+    // the bars move like preset 4: a 12 s loop, opposite slides with bursts
+    loopLen: 12,
+    barScroll: 8,
     stackAnchor: "top",
     stackY: 177.75 / 679,
     colors: { ...DEFAULT_PARAMS.colors, topA: "#FF63F4", topB: "#ED00A5", bottomA: "#8D5DF3", bottomB: "#0906B7" },
@@ -711,10 +746,25 @@ const setOrderUI = bindSeg<StaggerOrder>("orderSeg", "order", (v) => {
   params.staggerOrder = v;
   rebuild();
 });
+const setLockupUI = bindSeg<Lockup>("lockupSeg", "lockup", (v) => {
+  params.lockup = v;
+  rebuild();
+});
 
 // ---------- steppers ----------
 
 type NumKey =
+  | "easeRowOut"
+  | "easeRowIn"
+  | "easeTextOut"
+  | "easeTextIn"
+  | "easeDriftOut"
+  | "easeDriftIn"
+  | "push"
+  | "slide"
+  | "breath"
+  | "typePush"
+  | "barScroll"
   | "loopLen"
   | "unitPx"
   | "stripPx"
@@ -732,6 +782,7 @@ type NumKey =
   | "shapeSeed"
   | "blockWidth"
   | "blockTravel"
+  | "floatSeed"
   | "blockSeed"
   | "floatCount"
   | "floatSize"
@@ -754,12 +805,12 @@ interface StepDef {
 }
 const stepDefs: StepDef[] = [
   { key: "holdClosed", label: "Hold closed", min: 0, max: 20, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup" },
-  { key: "duration", label: "Opening time", min: 0.1, max: 6, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup", title: "One row's open / close transition; the block moves follow the same easing" },
+  { key: "duration", label: "Opening time", min: 0.1, max: 6, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup", title: "One row's open / close transition; its curve is Rows ease out / in" },
   { key: "opening", control: "slider", label: "Opening", min: 0, max: 100, step: 5, decimals: 0, suffix: "%", container: "timingGroup", title: "How far the rows open; the edge blocks stay on top of that" },
   { key: "vignette", control: "slider", label: "Vignette", min: 0, max: 100, step: 5, decimals: 0, suffix: "%", container: "timingGroup", title: "How much the hole follows the falloff circle on the preview: 0 = two vertical lines, 100 = the circle" },
   { key: "faith", control: "slider", label: "Faith", min: 0, max: 100, step: 5, decimals: 0, suffix: "%", container: "timingGroup", title: "100 = the hole follows the falloff, 0 = complete chaos (a random width per row and side)" },
   { key: "holdOpen", label: "Hold open", min: 0, max: 30, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup" },
-  { key: "labelTime", label: "Text time", min: 0.3, max: 3, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup", title: "How long one label block takes to come in or go" },
+  { key: "labelTime", label: "Text time", min: 0.3, max: 3, step: 0.1, decimals: 1, suffix: "s", container: "timingGroup", title: "How long one label block takes to come in (going out takes 1.1 s)" },
   { key: "loopLen", label: "Loop length", min: 0.5, max: 30, step: 0.5, decimals: 1, suffix: "s", container: "timingGroup", title: "One-stage posters: how long the stripes' motion cycle is" },
   { key: "rowsTop", label: "Rows top", min: 0, max: 24, step: 1, decimals: 0, container: "rowsGroup" },
   { key: "rowsBottom", label: "Rows bottom", min: 0, max: 24, step: 1, decimals: 0, container: "rowsGroup" },
@@ -769,7 +820,6 @@ const stepDefs: StepDef[] = [
   { key: "shapeSeed", label: "Shape seed", min: 0, max: 999999, step: 1, decimals: 0, container: "shapeGroup" },
   { key: "unitPx", label: "Block size", min: 12, max: 90, step: 3, decimals: 0, container: "blocksGroup", title: "The stripe unit in px at 1080: 45 in the reveal, 24 for the side blocks" },
   { key: "blockWidth", control: "slider", label: "Block width", min: 1, max: 8, step: 1, decimals: 0, container: "blocksGroup", title: "Widest edge block in an open row, in units (one unit = card width / 24); the blocks breathe two units below that" },
-  { key: "blockTravel", control: "slider", label: "Block travel", min: 0, max: 12, step: 1, decimals: 0, container: "blocksGroup", title: "Largest sideways step of a row's pattern, in units" },
   { key: "blockSeed", label: "Block seed", min: 0, max: 999999, step: 1, decimals: 0, container: "blocksGroup" },
   { key: "floatCount", control: "slider", label: "Floaters", min: 0, max: 60, step: 1, decimals: 0, container: "floatGroup", title: "Floating blocks spread over the open rows; they grow, shrink to nothing and back, and drift" },
   { key: "floatSize", control: "slider", label: "Floaters size", min: 0.5, max: 8, step: 0.5, decimals: 1, container: "floatGroup", title: "Largest floating block in units (smallest is half)" },
@@ -777,6 +827,7 @@ const stepDefs: StepDef[] = [
   { key: "imageFloatCount", control: "slider", label: "Image floaters", min: 0, max: 60, step: 1, decimals: 0, container: "floatGroup", title: "Floating blocks inside the photo or video: slices of it pushed sideways; they grow, shrink to nothing and back, and drift like the block floaters" },
   { key: "imageFloatSize", control: "slider", label: "Image floaters size", min: 0.5, max: 8, step: 0.5, decimals: 1, container: "floatGroup", title: "Largest image floater in units (smallest is half)" },
   { key: "imageFloatTravel", control: "slider", label: "Image floaters travel", min: 0, max: 600, step: 10, decimals: 0, container: "floatGroup", title: "How far a slice is pushed sideways at most, px on the 1080 canvas; the floater itself drifts half that" },
+  { key: "floatSeed", label: "Floaters seed", min: 0, max: 999999, step: 1, decimals: 0, container: "floatGroup", title: "Reshuffles only the floaters (where they sit, how they move), e.g. to move one off a face; the stripes stay. 0 = as the Block seed gives them" },
 ];
 const numParams = params as unknown as Record<NumKey, number>;
 const stepInputs: Partial<Record<NumKey, HTMLInputElement>> = {};
@@ -926,14 +977,14 @@ for (const def of stepDefs) renderStep(def);
 // have static text and no opening: their timing is one Loop length. The
 // block row has no hole (so no edge blocks, floaters or shape), no blocks
 // means no stripes at all, and the reveal has no title, info or logo.
-const ONE_STAGE_OFF: NumKey[] = ["holdClosed", "duration", "holdOpen", "labelTime", "stagger"];
+const ONE_STAGE_OFF: NumKey[] = ["holdClosed", "duration", "holdOpen", "labelTime", "stagger", "easeRowOut", "easeRowIn", "easeTextOut", "easeTextIn", "push", "typePush"];
 const HIDDEN_STEPS: Record<LayoutKind, NumKey[]> = {
-  reveal: ["stripPx", "loopLen"],
-  none: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "rowsTop", "rowsBottom", "stripPx", "irregularity", "shapeSeed", "unitPx", "blockWidth", "blockTravel", "blockSeed", "floatCount", "floatSize", "floatTravel", "imageFloatCount", "imageFloatSize", "imageFloatTravel"],
-  row: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "irregularity", "shapeSeed", "blockWidth", "floatCount", "floatSize", "floatTravel", "imageFloatCount", "imageFloatSize", "imageFloatTravel"],
-  side: [...ONE_STAGE_OFF, "stripPx"],
-  full: [...ONE_STAGE_OFF, "stripPx"],
-  page: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "irregularity", "shapeSeed", "stripPx", "blockWidth", "floatCount", "floatSize", "floatTravel", "imageFloatCount", "imageFloatSize", "imageFloatTravel"],
+  reveal: ["stripPx", "loopLen", "barScroll"],
+  none: [...ONE_STAGE_OFF, "easeDriftOut", "easeDriftIn", "slide", "breath", "opening", "vignette", "faith", "rowsTop", "rowsBottom", "stripPx", "irregularity", "shapeSeed", "unitPx", "blockWidth", "blockSeed", "floatCount", "floatSize", "floatTravel", "imageFloatCount", "imageFloatSize", "imageFloatTravel", "barScroll", "floatSeed"],
+  row: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "irregularity", "shapeSeed", "blockWidth", "floatCount", "floatSize", "floatTravel", "imageFloatCount", "imageFloatSize", "imageFloatTravel", "floatSeed"],
+  side: [...ONE_STAGE_OFF, "stripPx", "barScroll"],
+  full: [...ONE_STAGE_OFF, "stripPx", "barScroll"],
+  page: [...ONE_STAGE_OFF, "opening", "vignette", "faith", "irregularity", "shapeSeed", "stripPx", "blockWidth", "floatCount", "floatSize", "floatTravel", "imageFloatCount", "imageFloatSize", "imageFloatTravel", "barScroll", "floatSeed"],
 };
 // Text fields per preset: the artist cards (1, 3) take day, time, artist and
 // stage; the info posters (2, 4) a title and the sentence.
@@ -947,10 +998,13 @@ const TEXT_ROWS: Record<string, number[]> = {
   timeRow: [1, 3],
   artistRow: [1, 3],
   stageRow: [1, 3],
+  lockupRow: [1],
 };
 function syncVisibility() {
   const layout = params.layout;
   const hidden = new Set<NumKey>(HIDDEN_STEPS[layout]);
+  // Vignette and Faith shape the falloff circle, a preset 3 tool only
+  if (params.preset !== 3) for (const k of ["vignette", "faith"] as NumKey[]) hidden.add(k);
   for (const def of stepDefs) stepRows[def.key].hidden = hidden.has(def.key);
   const oneStage = layout !== "reveal";
   $<HTMLDivElement>("orderSeg").hidden = oneStage; // the stagger order only shapes the reveal
@@ -1625,7 +1679,7 @@ async function saveTouquet() {
  * browser, where the MP4 is made. A browser that gives us the new window
  * gets the card posted straight into it.
  */
-const SITE_URL = "https://typograaf.github.io/artist-card/";
+const SITE_URL = "https://mutant-tools.github.io/artist-card/";
 async function exportInBrowser() {
   const doc = await touquetDoc(docName || PRESET_NAMES[params.preset] || "card");
   const name = `${doc.name.replace(/[/\\:]/g, "-")}.touquet`;
@@ -1730,7 +1784,7 @@ function overArtist(x: number, y: number): boolean {
   const r = layout.artistRect;
   return !!r && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
-type DragMode = "none" | "label" | "pan" | "falloff" | "block" | "stack" | "group" | "resize";
+type DragMode = "none" | "label" | "pan" | "falloff" | "falloffR" | "block" | "stack" | "group" | "resize";
 let drag: DragMode = "none";
 let dragMoved = false;
 let emptyDown = false; // the last press landed on nothing draggable
@@ -1974,6 +2028,16 @@ canvas.addEventListener("pointerdown", (e) => {
   const pt = canvasPoint(e);
   if (!pt) return;
   const wasSelected = falloffSelected;
+  if (overFalloffRing(pt.x, pt.y, pt.k) && !overFalloff(pt.x, pt.y, pt.k)) {
+    // grab the outline: drag to make the circle bigger or smaller
+    drag = "falloffR";
+    canvas.classList.add("falloff-resize");
+    dragMoved = false;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+    return;
+  }
   falloffSelected = overFalloff(pt.x, pt.y, pt.k);
   const edgeKey = falloffSelected ? null : infoEdgeAt(pt.x, pt.y, pt.k);
   dragKey = falloffSelected ? null : (edgeKey ?? blockAt(pt.x, pt.y));
@@ -2000,6 +2064,12 @@ canvas.addEventListener("pointermove", (e) => {
   const pt = canvasPoint(e);
   if (!pt) return;
   if (drag === "none") {
+    const ring = !overFalloff(pt.x, pt.y, pt.k) && overFalloffRing(pt.x, pt.y, pt.k);
+    canvas.classList.toggle("falloff-ring-hover", ring);
+    if (ring) {
+      for (const c of ["resize-hover", "falloff-hover", "block-hover", "label-hover", "pan"]) canvas.classList.remove(c);
+      return;
+    }
     const overF = overFalloff(pt.x, pt.y, pt.k);
     const edge = overF ? null : infoEdgeAt(pt.x, pt.y, pt.k);
     const overE = !!edge;
@@ -2042,6 +2112,10 @@ canvas.addEventListener("pointermove", (e) => {
     params.stackY = clamp(params.stackY + dy / H, lo, hi);
     schedule();
     return;
+  } else if (drag === "falloffR") {
+    const d = Math.hypot(pt.x - params.falloffX * canvas.width, pt.y - params.falloffY * canvas.height);
+    params.falloffR = clamp(d / scene.S, 0.05, 4);
+    rebuild();
   } else if (drag === "falloff") {
     params.falloffX = clamp(params.falloffX + dx / canvas.width, 0, 1);
     params.falloffY = clamp(params.falloffY + dy / canvas.height, 0, 1);
@@ -2067,7 +2141,7 @@ canvas.addEventListener("pointermove", (e) => {
 });
 for (const ev of ["pointerup", "pointercancel"]) {
   canvas.addEventListener(ev, () => {
-    canvas.classList.remove("panning", "block-drag", "resize-drag");
+    canvas.classList.remove("panning", "block-drag", "resize-drag", "falloff-resize");
     drag = "none";
     dragKey = null;
   });
@@ -2080,7 +2154,7 @@ canvas.addEventListener("dblclick", (e) => {
   schedule();
 });
 canvas.addEventListener("pointerleave", () => {
-  canvas.classList.remove("label-hover", "pan", "falloff-hover", "block-hover");
+  canvas.classList.remove("label-hover", "pan", "falloff-hover", "falloff-ring-hover", "block-hover");
 });
 
 // The falloff handle: a small circle at the falloff centre, drag it to move
@@ -2088,13 +2162,19 @@ canvas.addEventListener("pointerleave", () => {
 // falloff circle (shown as a thin outline) instead of zooming the photo.
 let falloffSelected = false;
 const HANDLE_R = 6; // css px
-// the falloff shapes the hole, so it only exists where there is one
+// the falloff circle is a tool of the full-photo poster (preset 3) only
 function falloffActive(): boolean {
-  return params.layout === "reveal" || params.layout === "side" || params.layout === "full";
+  return params.preset === 3;
 }
 function overFalloff(x: number, y: number, k: number): boolean {
   if (!falloffActive()) return false;
   return Math.hypot(x - params.falloffX * canvas.width, y - params.falloffY * canvas.height) <= (HANDLE_R + 4) * k;
+}
+/** On the selected circle's outline: dragging it resizes the circle. */
+function overFalloffRing(x: number, y: number, k: number): boolean {
+  if (!falloffActive() || !falloffSelected) return false;
+  const d = Math.hypot(x - params.falloffX * canvas.width, y - params.falloffY * canvas.height);
+  return Math.abs(d - params.falloffR * scene.S) <= 8 * k;
 }
 function drawFalloffHandle() {
   if (!falloffActive()) return;
@@ -2316,6 +2396,10 @@ function applySettings(str: string): boolean {
     params.staggerOrder = obj.staggerOrder;
     applied++;
   }
+  if (obj.lockup === "stage" || obj.lockup === "day") {
+    params.lockup = obj.lockup;
+    applied++;
+  }
   for (const k of ["imageX", "imageY"] as const) {
     const v = obj[k];
     if (typeof v === "number" && Number.isFinite(v)) {
@@ -2338,12 +2422,16 @@ function applySettings(str: string): boolean {
     params.imageZoom = clamp(obj.imageZoom, 1, 6);
     applied++;
   }
+  // an older link's row curve as a cubic-bezier: its two handles read as AE influences
+  const legacyEasing = (obj as Record<string, unknown>).easing;
   if (
-    Array.isArray(obj.easing) &&
-    obj.easing.length === 4 &&
-    obj.easing.every((x) => typeof x === "number" && Number.isFinite(x))
+    Array.isArray(legacyEasing) &&
+    legacyEasing.length === 4 &&
+    legacyEasing.every((x) => typeof x === "number" && Number.isFinite(x))
   ) {
-    params.easing = (obj.easing as number[]).map((x) => clamp(x, 0, 1)) as [number, number, number, number];
+    const [x1, , x2] = legacyEasing as number[];
+    if (typeof obj.easeRowOut !== "number") params.easeRowOut = Math.round(clamp(x1, 0, 1) * 20) * 5;
+    if (typeof obj.easeRowIn !== "number") params.easeRowIn = Math.round((1 - clamp(x2, 0, 1)) * 20) * 5;
     applied++;
   }
   if (typeof obj.labelY === "number" && Number.isFinite(obj.labelY)) {
@@ -2591,6 +2679,7 @@ figmaBtn.addEventListener("click", async () => {
 function syncUI() {
   setFormatUI(params.format);
   setOrderUI(params.staggerOrder);
+  setLockupUI(params.lockup);
   setPresetUI(String(params.preset));
   setLoopsUI(String(params.loops));
   syncLayoutUI();
@@ -2716,6 +2805,7 @@ const SHORTCUTS: [string, [string, string][]][] = [
       ["\u2190 \u2192", "One frame back or forward"],
       ["\u21e7 \u2190 \u2192", "Ten frames"],
       ["Home / End", "First or last frame"],
+      ["Tab  or  \u2318 \\", "Hide or show the settings, to see the card bigger"],
     ],
   ],
   [
@@ -2724,7 +2814,7 @@ const SHORTCUTS: [string, [string, string][]][] = [
       [`${CMD} Z`, "Undo"],
       [`${CMD} \u21e7 Z`, "Redo"],
       ["\u2191 \u2193", "Previous or next colourway"],
-      ["1 \u2013 4", "Layout preset"],
+      ["1 \u2013 5", "Layout preset"],
       ["F", "Next format (\u21e7 F back)"],
       ["L", "Logo off, top, bottom"],
       ["\u232b", "Clear the block row you are holding"],
@@ -2745,11 +2835,12 @@ const SHORTCUTS: [string, [string, string][]][] = [
     "Mouse",
     [
       ["Drag the photo", "Pan"],
-      ["Scroll or pinch", "Zoom the photo (or the falloff)"],
+      ["Scroll or pinch", "Zoom the photo (or resize the falloff)"],
       ["Drag the name", "Move the artist row"],
       ["Drag a block", "Move its row"],
       ["\u21e7 drag a block", "Move the whole stack"],
       ["Drag the handle", "Move the falloff (\u21e7 snaps to centre)"],
+      ["Drag its outline", "Resize the falloff (preset 3)"],
       ["Click a swatch", "Colour of the text blocks"],
       ["Double-click a swatch", "Pick a colour"],
       [`${ALT} click a swatch`, "Copy its hex"],

@@ -10,7 +10,7 @@
   "documentAccess": "dynamic-page",
   "networkAccess": {
     "allowedDomains": [
-      "https://typograaf.github.io"
+      "https://mutant-tools.github.io"
     ],
     "reasoning": "The plugin window runs the live artist-card tool."
   }

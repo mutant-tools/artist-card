@@ -13,7 +13,7 @@ rm -rf .git
 git init -q
 git checkout -q -b gh-pages
 git add -A
-git -c user.name=typograaf -c user.email=hello@typografie.be commit -q -m "Deploy"
-git push -f https://github.com/typograaf/artist-card.git gh-pages:gh-pages
+git -c user.name=mutant-tools -c user.email=office@mutant.be commit -q -m "Deploy"
+git push -f https://github.com/mutant-tools/artist-card.git gh-pages:gh-pages
 rm -rf .git
 echo "deployed"

@@ -7,7 +7,7 @@
     for (var i = 1; i <= app.project.numItems; i++) { var it = app.project.item(i); if (it instanceof CompItem && it.name === "Artist card — tool v2") comp = it; }
   }
   if (!(comp instanceof CompItem) || !comp.layer("CTRL")) { alert("Open the comp built by build.jsx first (it needs the CTRL layer)."); return; }
-  var input = prompt("Paste the tool link (typograaf.github.io/artist-card/#...) or the Copy Settings text:", "");
+  var input = prompt("Paste the tool link (mutant-tools.github.io/artist-card/#...) or the Copy Settings text:", "");
   if (!input) return;
   input = input.replace(/^\s+|\s+$/g, "");
   var obj = {};
@@ -28,7 +28,8 @@
   var ctrl = comp.layer("CTRL");
   var sliders = { holdClosed: "Hold closed", duration: "Opening time", opening: "Opening %", vignette: "Vignette %", faith: "Faith %", holdOpen: "Hold open", rowsTop: "Rows top", rowsBottom: "Rows bottom",
     stagger: "Rows stagger", irregularity: "Irregularity %", shapeSeed: "Shape seed", blockWidth: "Block width", blockTravel: "Block travel", blockSeed: "Block seed",
-    floatCount: "Floaters", floatSize: "Floaters size", floatTravel: "Floaters travel" };
+    floatCount: "Floaters", floatSize: "Floaters size", floatTravel: "Floaters travel",
+    easeRowOut: "Rows ease out", easeRowIn: "Rows ease in", easeTextOut: "Text ease out", easeTextIn: "Text ease in", easeDriftOut: "Drift ease out", easeDriftIn: "Drift ease in", push: "Pattern push", slide: "Constant slide" };
   var colours = { "colors.topA": "Top A", "colors.topB": "Top B", "colors.bottomA": "Bottom A", "colors.bottomB": "Bottom B", "colors.labelBg": "Label bg", "colors.labelText": "Label text" };
   var texts = { day: "INPUT Day", timeStart: "INPUT Time start", timeEnd: "INPUT Time end", artist: "INPUT Artist", stage: "INPUT Stage" };
   // the 67 locked colourways (top A, top B, bottom A, bottom B), same order as the web tool

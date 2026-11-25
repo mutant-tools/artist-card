@@ -71,7 +71,12 @@ html, body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--sidebar);
   height: 100vh;
+  overflow: hidden;
+  transition: grid-template-columns 0.45s cubic-bezier(0.75, 0, 0.25, 1);
 }
+/* Tab or cmd-backslash slides the settings out, so the card gets the whole window */
+#app.panel-hidden { grid-template-columns: minmax(0, 1fr) 0px; }
+#sidebar { width: var(--sidebar); }
 
 /* ---------- SIDEBAR ---------- */
 /* one column of groups; it scrolls when the settings run past the window */
@@ -281,6 +286,8 @@ input[type="text"]:focus { background: var(--surface-hover); }
 #canvas.panning { cursor: grabbing; }
 #canvas.label-hover { cursor: ns-resize; }
 #canvas.falloff-hover { cursor: move; }
+#canvas.falloff-ring-hover,
+#canvas.falloff-resize { cursor: nwse-resize; }
 #canvas.block-hover { cursor: grab; }
 #canvas.block-drag { cursor: grabbing; }
 #canvas.empty { cursor: pointer; }

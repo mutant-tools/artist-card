@@ -159,6 +159,9 @@ jsx = r'''
     (function () { var e = ctrl.property("Effects").addProperty("ADBE Point Control"); e.name = "Falloff centre"; e.property(1).setValue([DEFAULTS.falloffX * W, DEFAULTS.falloffY * H]); })();
     slider("Falloff radius", DEFAULTS.falloffR * Math.min(W, H)); slider("Hold open", DEFAULTS.holdOpen);
     slider("Rows top", DEFAULTS.rowsTop); slider("Rows bottom", DEFAULTS.rowsBottom);
+    slider("Rows ease out", DEFAULTS.easeRowOut); slider("Rows ease in", DEFAULTS.easeRowIn);
+    slider("Text ease out", DEFAULTS.easeTextOut); slider("Text ease in", DEFAULTS.easeTextIn);
+    slider("Drift ease out", DEFAULTS.easeDriftOut); slider("Drift ease in", DEFAULTS.easeDriftIn); slider("Pattern push", DEFAULTS.push); slider("Constant slide", DEFAULTS.slide);
     slider("Rows stagger", DEFAULTS.stagger); slider("Irregularity %%", DEFAULTS.irregularity); slider("Shape seed", DEFAULTS.shapeSeed);
     try {
       var fx = ctrl.property("Effects");
@@ -304,6 +307,7 @@ jsx = r'''
 })();
 '''
 defaults = {"holdClosed":1.5,"duration":1.5,"opening":100,"vignette":0,"faith":100,"falloffX":0.5,"falloffY":0.5,"falloffR":0.625,"holdOpen":1.5,"rowsTop":4,"rowsBottom":4,"stagger":0.15,"irregularity":30,"shapeSeed":1,
+ "easeRowOut":75,"easeRowIn":90,"easeTextOut":75,"easeTextIn":75,"easeDriftOut":75,"easeDriftIn":75,"push":50,"slide":45,
  "blockWidth":2,"blockTravel":4,"blockSeed":4,"floatCount":9,"floatSize":4.5,"floatTravel":100,
  "colorway":0, "colors":{"topA":"#E90062","topB":"#AA0026","bottomA":"#80FFE3","bottomB":"#027370","labelBg":"#FFEFA4","labelText":"#000000"},
  "labelY":401/679,"day":"Thursday 28.08","timeStart":"20:00","timeEnd":"21:00","artist":"Chris Stussy","stage":"Main Stage",

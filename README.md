@@ -7,7 +7,7 @@ closed card, the times, artist name and stage unfold as word blocks once
 the card is open. **No blocks**, **Block row** (thin strips at the top and
 bottom) and **Side blocks** are one-stage posters: the stripes move for the
 whole loop and the word blocks are simply there, static. Exports PNG stills and
-one-loop H.264 MP4s (2x: 2160 wide, 60 fps, ~0.4 bit per pixel per frame),
+one-loop H.264 MP4s (2x: 2160 wide, 30 fps, ~0.4 bit per pixel per frame),
 with music when an MP3 is loaded.
 
 The UI and the card follow the Figma design in Touquet-2027 (frames 229:94,
@@ -25,7 +25,7 @@ npm run build    # dist/
 
 Avantt Bold and SemiBold are expected in `public/fonts/` (licensed, not in
 the repo). `npm run deploy` builds and pushes `dist/` to the `gh-pages`
-branch, which GitHub Pages serves at https://typograaf.github.io/artist-card/.
+branch, which GitHub Pages serves at https://mutant-tools.github.io/artist-card/.
 The bundled default photo is `public/default.jpg`.
 
 ## Controls
@@ -50,7 +50,9 @@ pointer is over the row.
   sentence between 12 px and 18 px; Enter in Info starts a new block row. The
   day is set in capitals, the stage is big when there is no artist and in
   capitals under the artist name otherwise, the time is one block, the info
-  sentence one small block. **+** next to the artist adds a second artist
+  sentence one small block. **Lockup** (Reveal) arranges the open card:
+  Stage below (time, name, stage) or Day below (time, name, day). The closed card keeps
+  the stage and the day either way, so the first and last frames never change. **+** next to the artist adds a second artist
   (two at most): the B2B badge sits in front of the second name. **Image**
   loads or removes the photo (or drop one on the preview, paste one, or
   click an empty card). **Music** loads an MP3: the strip above the card
@@ -71,8 +73,42 @@ pointer is over the row.
   stack height are in the link. Shift while dragging the falloff handle
   snaps it to the centre lines; the handle only shows in the presets that
   have a hole (Reveal, Side blocks, Full blocks).
-- **Text time** seconds one label block takes to come in or go (1 s in the
-  design, reveal only). **Loop length** (one-stage posters) the stripes'
+- **Easing** (built in, not in the panel: the client version keeps the
+  tuned values; old links that carry them still apply) three curves set as After Effects keyframe influence, Out on
+  the launch key and In on the landing key (0 / 0 is linear), fitted to the
+  AE master: **Rows** the opening (the closing is the opening played in
+  reverse; a row's closing stripe-width change rides the hole on that
+  reversed curve), **Text** a word block coming in and going out (both play
+  the curve forward, as in the master), **Drift** every key of the constant
+  motion (stripe widths, drift, edge blocks, floaters). Defaults 75 / 90,
+  78 / 82 coming in and 100 / 39 going out (from the AE master) (a slow build, a late peak, a quick finish), 75 / 75. **Pattern push** as a row opens, each half of its
+  pattern is pushed out by the hole edge and glides on past it, on a move
+  twice the opening's length (influence 45 / 95), this many % further than
+  the edge (default 50; 0 = stuck to the edge); the closing pushes it back
+  the same way, easing on after the bars land. As in the master the pattern then rests while the card is open
+  (its stripes widen once, on the push) and only drifts while it is closed.
+  The rows no longer nudge sideways (the stripe scaling carries the motion;
+  Block travel is gone). **Type push** (units, default 13, locked to the name boxes, 0.2 s ahead of them and smoothed over 0.7 s, as they open and close; the rows by the seam also kick sideways, 70 % of it and with the same timing, neighbours in opposite directions, as the stage and day boxes come in and fold out) the slices by
+  the artist name open that much further while it comes in, as if the boxes
+  push them, and settle back as it goes.
+  **Bar scroll** (units, thin bars only, default 0; presets 4 and 5: 8) the bars
+  slide slowly in opposite directions (30 px/s at 1080) and twice a loop
+  each one speeds up for about 2 s, scrolls on that far and slows down
+  again (75 / 75) by about the same distance on screen, starting while
+  its scaling move is still landing, so the two motions overlap a little.
+  The bars scale about the middle of the screen, 0.4 loop apart, so one is
+  always zoomed in while the other is zoomed out, and their bursts never
+  come together; presets 4 and 5 loop in 12 s.
+  **Stripe scaling** (%, default 100) every row's stripes grow to twice
+  their width and back every 6 s (a move every 3 s; every preset loops in 12 s, the reveal's timeline rounded up with a short closed rest; a whole number of cycles per loop) on long soft S-curves (influence
+  85 / 85, 40 % of the loop each), the rows a quarter or half loop apart,
+  as in the pattern masters (web tool only; the AE comp keeps its old width
+  steps). **Constant slide** (px/s at 1080, default 45) a slow constant sideways
+  slide under all of it, per row, so the pattern never comes to a dead stop
+  (a whole number of stripe pairs per loop, seamless). Older links with `easing=x1,y1,x2,y2` are read as the rows'
+  influences. The AE comp has the same seven sliders on CTRL.
+- **Text time** seconds one label block takes to come in (1.7 s; going out takes 1.1 s, the AE master's 26 frames as its 24 fps preview plays them;
+  reveal only). **Loop length** (one-stage posters) the stripes'
   motion cycle in seconds. Settings and text fields that cannot change the
   picture in the current preset are hidden: the artist cards (1, 3) take day, time, artist and stage, the info
   posters (2, 4) a title and the sentence; a one-stage poster has no
@@ -85,9 +121,9 @@ pointer is over the row.
   the edge blocks stay on top of that.
 - **Vignette %** how much the hole follows the falloff circle: 0 is two
   vertical lines, 100 the circle. The small handle on the card is the
-  falloff centre (default: the middle of the canvas); drag it to move the
-  falloff, and while it is selected scroll over the card to resize the
-  circle (Escape deselects). **Faith %** 100 follows the falloff, 0 is
+  falloff centre (default: the middle of the canvas; preset 3 only); drag it to
+  move the falloff, and while it is selected drag its outline or scroll over
+  the card to resize the circle (Escape deselects). **Faith %** 100 follows the falloff, 0 is
   complete chaos: a random width per row and side.
 - **Rows top / bottom** row counts; **Strip height** (block row only) the
   height of one strip row in px at 1080.
@@ -164,8 +200,9 @@ pointer is over the row.
   (a slider drag or a typed word is one step); photos, video and music are
   not part of the history. Inside a text field Cmd+Z is the field's own undo.
 - **Shortcuts** the ? in the bottom-right corner of the preview lists them
-  (hover, click or press ?): Space plays, arrows step frames (Shift: ten),
-  Home/End jump, Up/Down change the colourway, 1-4 pick a preset, F cycles
+  (hover, click or press ?): Space plays, Tab (or ⌘ \) slides the settings
+  out to see the card bigger, arrows step frames (Shift: ten),
+  Home/End jump, Up/Down change the colourway, 1-5 pick a preset, F cycles
   the format, L the logo position, Cmd+S / Cmd+O save and open a .touquet,
   Cmd+I loads a photo or video, Cmd+E exports the MP4, Cmd+Shift+E the PNG.
 - **Export InDesign / Illustrator** the frame shown in the preview as an
@@ -192,7 +229,7 @@ the time first). The text is set in Avantt Bold, which has to be installed
 on that machine (Inter Bold stands in otherwise, with a note).
 
 Install once: download
-https://typograaf.github.io/artist-card/artist-card-figma-plugin.zip and
+https://mutant-tools.github.io/artist-card/artist-card-figma-plugin.zip and
 unzip it (or use the `figma-plugin/` folder of this repo), then in the Figma
 desktop app: Plugins > Development > Import plugin from manifest, pick
 `figma-plugin/manifest.json`. Then either
