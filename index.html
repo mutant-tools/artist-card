@@ -253,11 +253,15 @@
     <pre id="bootError" hidden></pre>
     <script>
       // if the app fails to start, say so on the page (a code layer has no console)
+      // (errors from browser extensions are not the app's: they are skipped)
+      var foreign = function (s) { return /extension:\/\//.test(String(s || "")); };
       window.addEventListener("error", function (e) {
+        if (foreign(e.filename) || foreign(e.error && e.error.stack)) return;
         var el = document.getElementById("bootError");
         if (el) { el.hidden = false; el.textContent = "Error: " + (e.message || e.type); }
       });
       window.addEventListener("unhandledrejection", function (e) {
+        if (foreign(e.reason && e.reason.stack)) return;
         var el = document.getElementById("bootError");
         if (el) { el.hidden = false; el.textContent = "Error: " + (e.reason && e.reason.message ? e.reason.message : e.reason); }
       });
