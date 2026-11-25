@@ -52,7 +52,12 @@ pointer is over the row.
   capitals under the artist name otherwise, the time is one block, the info
   sentence one small block. **Lockup** (Reveal) arranges the open card:
   Stage below (time, name, stage) or Day below (time, name, day). The closed card keeps
-  the stage and the day either way, so the first and last frames never change. **+** next to the artist adds a second artist
+  the stage and the day either way, so the first and last frames never change. **Position**
+  (Reveal) snaps the open card's text to the Top (under a top logo), Centre
+  or Bottom (above a bottom logo) and keeps it there when the text changes;
+  dragging the name on the preview frees it again. **Type size** (Reveal) sets the open card's text to
+  Small (80 %) or Normal (as designed, the default);
+  the closed card keeps its size. **+** next to the artist adds a second artist
   (two at most): the B2B badge sits in front of the second name. **Image**
   loads or removes the photo (or drop one on the preview, paste one, or
   click an empty card). **Music** loads an MP3: the strip above the card
@@ -168,7 +173,7 @@ pointer is over the row.
   video loops), and the stepper that appears between Load and Remove sets
   where in the video it starts, in seconds, wrapping round the end. Exports
   read the same frames. **Remove** leaves the card without a background.
-- **Logo** off, top or bottom, white or black, in every layout; **Lockup**
+- **Logo** off, top or bottom, white or black, in every layout (in 9:16 a top logo's wordmark sits centred in the second stripe row, and otherwise the logo keeps out of Instagram's top 180 px and bottom 340 px, so the story UI never covers it; **Safe zone** Off, shown in 9:16 only, puts the logo back at the plain edge margin for stories not posted to Instagram); **Lockup**
   the Basic, 10 Years or Full version. At the bottom each lockup keeps its
   own ink at the margin; at the top the wordmark stays put when the lockup
   changes (the Full one is placed at the margin and the others put their
@@ -238,6 +243,13 @@ desktop app: Plugins > Development > Import plugin from manifest, pick
   press **Send to Figma**; or
 - press **Export Figma** in the tool anywhere (the site, or the code layer
   in the Touquet file), run the plugin and press **Paste from clipboard**.
+
+Updates: the plugin window loads the live site, so every `npm run deploy`
+reaches everyone who installed it the next time they open the plugin;
+nobody reinstalls. Only a change inside `figma-plugin/` itself (the plugin
+code, its manifest or the site address) needs the new zip imported again,
+with the same Import plugin from manifest. If the plugin still shows the
+old tool, close and reopen it.
 
 
 ## InDesign

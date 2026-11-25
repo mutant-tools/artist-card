@@ -45,6 +45,9 @@ import {
   type StackKey,
   type StaggerOrder,
   type Lockup,
+  type LabelPos,
+  type SafeZone,
+  type TypeSize,
 } from "./engine";
 import { exportMp4, exportPng, fontsReady, supportsVideoExport, type BeforeFrame } from "./export";
 import { loadLogo } from "./logo";
@@ -579,6 +582,7 @@ function bindSeg<T extends string>(id: string, attr: string, onPick: (value: T) 
 const setFormatUI = bindSeg<Format>("formatSeg", "format", (v) => {
   params.format = v;
   applyFormat();
+  syncLayoutUI();
   rebuild();
 });
 // Layout presets: the examples from the Figma sheet (frame 442:25032).
@@ -699,12 +703,15 @@ function applyPreset(n: number) {
 const logoColorRow = $<HTMLDivElement>("logoColorRow");
 const logoStyleRow = $<HTMLDivElement>("logoStyleRow");
 const logoPosRow = $<HTMLDivElement>("logoPosRow");
+const safeZoneRow = $<HTMLDivElement>("safeZoneRow");
 function syncLayoutUI() {
   const off = params.logo === "off";
   const icon = params.logoStyle === "icon";
   logoColorRow.hidden = off || icon; // the icon takes the text blocks' colours
   logoStyleRow.hidden = off;
   logoPosRow.hidden = off || !icon;
+  safeZoneRow.hidden = params.format !== "9:16"; // only stories have Instagram's UI on top
+  setSafeZoneUI(params.safeZone);
   setLogoUI(params.logo);
   setLogoColorUI(params.logoColor);
   setLogoStyleUI(params.logoStyle);
@@ -744,6 +751,18 @@ function applyFormat() {
 }
 const setOrderUI = bindSeg<StaggerOrder>("orderSeg", "order", (v) => {
   params.staggerOrder = v;
+  rebuild();
+});
+const setTypeSizeUI = bindSeg<TypeSize>("typeSizeSeg", "size", (v) => {
+  params.typeSize = v;
+  rebuild();
+});
+const setSafeZoneUI = bindSeg<SafeZone>("safeZoneSeg", "safe", (v) => {
+  params.safeZone = v;
+  rebuild();
+});
+const setLabelPosUI = bindSeg<LabelPos>("labelPosSeg", "pos", (v) => {
+  params.labelPos = v;
   rebuild();
 });
 const setLockupUI = bindSeg<Lockup>("lockupSeg", "lockup", (v) => {
@@ -999,6 +1018,8 @@ const TEXT_ROWS: Record<string, number[]> = {
   artistRow: [1, 3],
   stageRow: [1, 3],
   lockupRow: [1],
+  labelPosRow: [1],
+  typeSizeRow: [1],
 };
 function syncVisibility() {
   const layout = params.layout;
@@ -2128,6 +2149,12 @@ canvas.addEventListener("pointermove", (e) => {
     rebuild();
     return;
   } else if (drag === "label") {
+    if (params.labelPos) {
+      // dragging frees a snapped group, from where it stands
+      if (layout.artistRect) params.labelY = layout.artistRect.y / canvas.height;
+      params.labelPos = "";
+      setLabelPosUI("");
+    }
     params.labelY = clamp(params.labelY + dy / canvas.height, 0, 1);
   } else if (image) {
     canvas.classList.add("panning");
@@ -2394,6 +2421,18 @@ function applySettings(str: string): boolean {
   }
   if (obj.staggerOrder === "center" || obj.staggerOrder === "top" || obj.staggerOrder === "bottom") {
     params.staggerOrder = obj.staggerOrder;
+    applied++;
+  }
+  if (obj.labelPos === "" || obj.labelPos === "top" || obj.labelPos === "center" || obj.labelPos === "bottom") {
+    params.labelPos = obj.labelPos;
+    applied++;
+  }
+  if (obj.typeSize === "s" || obj.typeSize === "n") {
+    params.typeSize = obj.typeSize;
+    applied++;
+  }
+  if (obj.safeZone === "ig" || obj.safeZone === "off") {
+    params.safeZone = obj.safeZone;
     applied++;
   }
   if (obj.lockup === "stage" || obj.lockup === "day") {
@@ -2680,6 +2719,8 @@ function syncUI() {
   setFormatUI(params.format);
   setOrderUI(params.staggerOrder);
   setLockupUI(params.lockup);
+  setLabelPosUI(params.labelPos);
+  setTypeSizeUI(params.typeSize);
   setPresetUI(String(params.preset));
   setLoopsUI(String(params.loops));
   syncLayoutUI();
@@ -2832,11 +2873,21 @@ const SHORTCUTS: [string, [string, string][]][] = [
     ],
   ],
   [
+    "Settings",
+    [
+      ["Lockup", "Stage or day under the artist name (preset 1)"],
+      ["Position", "Snap the open card's text top, centre or bottom"],
+      ["Type size", "Small for long names or 1:1"],
+      ["Safe zone", "9:16: keep the logo clear of Instagram's story bars"],
+      ["Export Figma", "Copies the card; in the Figma plugin it is Send to Figma and builds the layers"],
+    ],
+  ],
+  [
     "Mouse",
     [
       ["Drag the photo", "Pan"],
       ["Scroll or pinch", "Zoom the photo (or resize the falloff)"],
-      ["Drag the name", "Move the artist row"],
+      ["Drag the name", "Move the artist text (frees Position)"],
       ["Drag a block", "Move its row"],
       ["\u21e7 drag a block", "Move the whole stack"],
       ["Drag the handle", "Move the falloff (\u21e7 snaps to centre)"],

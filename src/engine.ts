@@ -14,6 +14,13 @@ export type Focus = "top" | "bottom";
 export type StaggerOrder = "center" | "top" | "bottom";
 /** Reveal: the open card's lockup: time / name / stage, or time / name / day. */
 export type Lockup = "stage" | "day";
+/** Reveal: the open card's text group snapped to the top, centre or bottom, or "" where it was dragged (labelY). */
+export type LabelPos = "" | "top" | "center" | "bottom";
+/** 9:16: keep the logo and snapped text out of Instagram's story UI ("ig") or use the plain edge margin ("off"). */
+export type SafeZone = "ig" | "off";
+/** Reveal: the open card's text size: small or normal (as designed). */
+export type TypeSize = "s" | "n";
+const TYPE_SIZES: Record<TypeSize, number> = { s: 0.8, n: 1 };
 /** reveal = the two-stage construction; the others are one-stage posters */
 export type LayoutKind = "reveal" | "none" | "row" | "side" | "full" | "page"; // page: the closed card, rows over the whole card, never opening
 export type StackAnchor = "top" | "bottom";
@@ -187,7 +194,10 @@ export interface Params {
   loopLen: number; // one-stage posters: the loop length in seconds (the stripes' motion cycle)
   artist: string;
   stage: string;
-  labelY: number; // 0..1, top of the artist label group as a fraction of H
+  labelY: number; // 0..1, top of the artist label group as a fraction of H (when labelPos is "")
+  typeSize: TypeSize; // reveal: the open card's text size (small 80 %, normal as designed)
+  safeZone: SafeZone; // 9:16 only: Instagram story safe zone for the logo and snapped text
+  labelPos: LabelPos; // reveal: the artist group snapped to top, centre or bottom; "" = dragged to labelY
   fontFamily: string;
   imageZoom: number; // 1..
   imageX: number; // -1..1 (set by dragging the preview)
@@ -294,6 +304,9 @@ export const DEFAULT_PARAMS: Params = {
   artist: "Chris Stussy",
   stage: "Main Stage",
   labelY: 401 / 679,
+  labelPos: "",
+  safeZone: "ig",
+  typeSize: "n",
   fontFamily: "Avantt",
   imageZoom: 1,
   imageX: 0,
@@ -1937,6 +1950,19 @@ export interface LogoImages {
 }
 const LOGO_INK_WIDTH = 0.905; // the wordmark's ink spans this much of the short side (the original logo.svg at full width)
 const LOGO_MARGIN = 51.5 / 1080; // the ink's distance from the top or bottom edge, as a fraction of the short side (the original logo.svg)
+/**
+ * 9:16 stories: Instagram covers the top (profile, progress bar) and the
+ * bottom (reply bar), so the logo and snapped text keep out of those bands
+ * (180 px top, 340 px bottom on 1080 x 1920).
+ */
+const STORY_SAFE_TOP = 180 / 1920;
+const STORY_SAFE_BOTTOM = 340 / 1920;
+/** Distance from the top and bottom edge for the logo ink and snapped text (px at this scale). */
+function edgeMargins(p: Params, W: number, H: number, S: number): { top: number; bottom: number } {
+  const m = S * LOGO_MARGIN;
+  if (H / W < 1.7 || p.safeZone === "off") return { top: m, bottom: m };
+  return { top: Math.max(m, H * STORY_SAFE_TOP), bottom: Math.max(m, H * STORY_SAFE_BOTTOM) };
+}
 let logoSet: Partial<Record<LogoStyle, LogoImages>> = {};
 let logoImages: LogoImages | null = null; // the style in use, set by render / logoRect
 /** The logo artwork is loaded by the app (it is not part of the engine). */
@@ -1970,15 +1996,53 @@ export function logoRect(p: Params, scene: Scene, scale: number): Rect | null {
     const w = (S * LOGO_INK_WIDTH) / inkW;
     const h = (w * img.h) / img.w;
     // the ink keeps the design's margin from the edge, whatever the file's own
-    const margin = S * LOGO_MARGIN;
-    const y = p.logo === "top" ? margin - img.inkTop * h : H - margin - img.inkBottom * h;
+    const edge = edgeMargins(p, W, H, S);
+    const y = p.logo === "top" ? edge.top - img.inkTop * h : H - edge.bottom - img.inkBottom * h;
     return { w, h, y };
   };
   const r = place(ref);
+  // 9:16 with the logo on top: the wordmark sits centred in the second stripe
+  // row (clear of Instagram's story header), when the rows are full height
+  const row2 = scene.rows[1];
+  if (p.logo === "top" && H / W >= 1.7 && p.safeZone !== "off" && row2 && row2.y0 < scene.H / 2 && row2.y1 - row2.y0 > 0.08 * scene.H) {
+    const bone = r.y + ((ref.boneTop + ref.boneBottom) / 2) * r.h;
+    r.y += ((row2.y0 + row2.y1) / 2) * scale - bone;
+  }
   const cur = place(logoImages);
   const x = (W - cur.w) / 2;
   const y = p.logo === "top" ? r.y + ref.boneBottom * r.h - logoImages.boneBottom * cur.h : cur.y;
   return { x, y, w: cur.w, h: cur.h };
+}
+
+/** The reveal's open-card group (icon, time, name, B2B, stage or day), top to bottom. */
+function artistGroupRows(ctx: CanvasRenderingContext2D, p: Params, S: number, gap: number, maxW: number, fam: string): LabelRow[] {
+  const times = layoutRow(ctx, topLine(p), STYLE_TINY, S, gap, maxW, fam);
+  const nameRows = artistRows(ctx, p, S, gap, maxW, fam);
+  const under = layoutRow(ctx, words(p[belowKey(p)], true), STYLE_SMALL, S, gap, maxW, fam);
+  const iconInl = iconInline(p) ? iconRow(ctx, S, fam) : null;
+  return [iconInl, times, ...nameRows, under].filter((r): r is LabelRow => !!r);
+}
+/**
+ * Top of the open-card group of height gh (px at this scale): snapped to the
+ * top, centre or bottom (clear of the logo, with its margin), or where it was
+ * dragged.
+ */
+function artistGroupTop(p: Params, scene: Scene, scale: number, gh: number): number {
+  const H = scene.H * scale;
+  const margin = scene.S * scale * LOGO_MARGIN;
+  const edge = edgeMargins(p, scene.W * scale, H, scene.S * scale);
+  const lr = logoRect(p, scene, scale);
+  const img = logoImages;
+  let lo = edge.top;
+  let hi = H - edge.bottom;
+  if (lr && img && p.logo === "top") lo = lr.y + img.inkBottom * lr.h + margin;
+  if (lr && img && p.logo === "bottom") hi = lr.y + img.inkTop * lr.h - margin;
+  let top: number;
+  if (p.labelPos === "top") top = lo;
+  else if (p.labelPos === "bottom") top = hi - gh;
+  else if (p.labelPos === "center") top = (H - gh) / 2;
+  else top = clamp01(p.labelY) * H;
+  return Math.max(0, Math.min(H - gh, top));
 }
 
 /**
@@ -2020,6 +2084,15 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
   const unit = scene.unit * scale;
   const cx = W / 2;
   ctx.save();
+  if (scene.layout === "reveal" && p.labelPos) {
+    // a snapped group: the pattern reacts at the height it is drawn at
+    const fam = p.fontFamily || "Avantt";
+    const tk = TYPE_SIZES[p.typeSize] ?? 1;
+    const gap = LABEL_GAP * S * tk;
+    const rows = artistGroupRows(ctx, p, S * tk, gap, W * 0.92, fam);
+    const gh = rows.reduce((a, r) => a + r.h, 0) + gap * Math.max(0, rows.length - 1);
+    scene.typeY = artistGroupTop(p, scene, scale, gh) / scale + 0.1 * scene.S;
+  }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, W, H);
   if (backgroundFill) {
@@ -2160,17 +2233,16 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
       y += r.h + gap;
     }
 
-    const times = layoutRow(ctx, topLine(p), STYLE_TINY, S, gap, maxW, fam);
-    const nameRows = artistRows(ctx, p, S, gap, maxW, fam);
-    const under = [layoutRow(ctx, words(p[belowKey(p)], true), STYLE_SMALL, S, gap, maxW, fam)];
-    const iconInl = iconInline(p) ? iconRow(ctx, S, fam) : null;
-    const groupRows = [iconInl, times, ...nameRows, ...under].filter((r): r is LabelRow => !!r);
+    // the open card's text at the Type size (the closed card keeps its size)
+    const tk = TYPE_SIZES[p.typeSize] ?? 1;
+    const gGap = gap * tk;
+    const groupRows = artistGroupRows(ctx, p, S * tk, gGap, maxW, fam);
     if (groupRows.length) {
-      const gh = groupRows.reduce((a, r) => a + r.h, 0) + gap * (groupRows.length - 1);
+      const gh = groupRows.reduce((a, r) => a + r.h, 0) + gGap * (groupRows.length - 1);
       const gw = groupRows.reduce((a, r) => Math.max(a, r.w), 0);
-      const top = Math.max(0, Math.min(H - gh, clamp01(p.labelY) * H));
+      const top = artistGroupTop(p, scene, scale, gh);
       // the icon may be missing (not loaded yet) while the scene counts it
-      const slotSkip = iconInline(p) && !iconInl ? 1 : 0;
+      const slotSkip = iconInline(p) && !logoSet.icon ? 1 : 0;
       let first = 0;
       let yy = top;
       let anyOpen = 0;
@@ -2183,7 +2255,7 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
           r,
           cx,
           yy,
-          gap,
+          gGap,
           (i) => {
             const as = scene.artistSlots;
             const k = base + i + slotSkip;
@@ -2197,7 +2269,7 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
           fam,
         );
         first += r.blocks.length;
-        yy += r.h + gap;
+        yy += r.h + gGap;
       }
       if (anyOpen > 0.5) out.artistRect = { x: cx - gw / 2, y: top, w: gw, h: gh };
     }

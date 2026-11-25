@@ -85,6 +85,21 @@
               <button type="button" class="btn" data-lockup="day" title="Time, name, day">Day below</button>
             </div>
           </div>
+          <div class="row field" id="labelPosRow" title="Where the text sits once the card is open; dragging the name on the preview frees it">
+            <span class="lbl">Position</span>
+            <div class="seg" id="labelPosSeg">
+              <button type="button" class="btn" data-pos="top">Top</button>
+              <button type="button" class="btn" data-pos="center">Centre</button>
+              <button type="button" class="btn" data-pos="bottom">Bottom</button>
+            </div>
+          </div>
+          <div class="row field" id="typeSizeRow" title="The open card's text size: Small for long names or square formats">
+            <span class="lbl">Type size</span>
+            <div class="seg" id="typeSizeSeg">
+              <button type="button" class="btn" data-size="s">Small</button>
+              <button type="button" class="btn active" data-size="n">Normal</button>
+            </div>
+          </div>
           <div class="row field tall" id="infoRow">
             <span class="lbl">Info</span>
             <div class="with-btn para">
@@ -199,6 +214,13 @@
               <button type="button" class="btn" data-iconpos="lb" title="Bottom left corner">LB</button>
               <button type="button" class="btn" data-iconpos="rb" title="Bottom right corner">RB</button>
               <button type="button" class="btn active" data-iconpos="inline" title="A block in the stack with the other text blocks; drag it on the preview like any block">Inline</button>
+            </div>
+          </div>
+          <div class="row field" id="safeZoneRow" hidden title="9:16: keep the logo clear of Instagram's story header and reply bar, or put it at the plain edge margin">
+            <span class="lbl">Safe zone</span>
+            <div class="seg" id="safeZoneSeg">
+              <button type="button" class="btn active" data-safe="ig">Instagram</button>
+              <button type="button" class="btn" data-safe="off">Off</button>
             </div>
           </div>
         </section>
