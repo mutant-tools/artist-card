@@ -2286,17 +2286,22 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
   // p.stack (bottom edge at stackY); blocks dragged out of it sit at their
   // own height, still centred. Everything slides in once, in stack order,
   // after Hold closed, and leaves in reverse order before the loop ends.
+  // Type size: Small sets every block but the info sentences (they have
+  // their own S / M) at TYPE_SIZES.s
+  const tk = TYPE_SIZES[p.typeSize] ?? 1;
+  const S1 = S * tk;
+  const gGap = gap * tk;
   const items = new Map<StackKey, LabelRow[]>();
   const hasArtist = !!p.artist.trim();
   for (const key of STACK_KEYS) {
     let rows: LabelRow[] = [];
-    if (key === "title") rows = p.title.split(/\n/).flatMap((line) => wrapRows(ctx, words(line, false), STYLE_BIG, S, gap, maxW, fam));
-    else if (key === "day") rows = wrapRows(ctx, words(p.day, true), STYLE_SMALL, S, gap, maxW, fam);
-    else if (key === "time") rows = [layoutRow(ctx, timeLabel(p) ? [timeLabel(p)] : [], STYLE_TINY, S, gap, maxW, fam)].filter((r): r is LabelRow => !!r);
+    if (key === "title") rows = p.title.split(/\n/).flatMap((line) => wrapRows(ctx, words(line, false), STYLE_BIG, S1, gGap, maxW, fam));
+    else if (key === "day") rows = wrapRows(ctx, words(p.day, true), STYLE_SMALL, S1, gGap, maxW, fam);
+    else if (key === "time") rows = [layoutRow(ctx, timeLabel(p) ? [timeLabel(p)] : [], STYLE_TINY, S1, gGap, maxW, fam)].filter((r): r is LabelRow => !!r);
     else if (key === "artist") {
-      rows = artistRows(ctx, p, S, gap, maxW, fam);
-    } else if (key === "stage") rows = wrapRows(ctx, words(p.stage, hasArtist), hasArtist ? STYLE_SMALL : STYLE_BIG, S, gap, maxW, fam);
-    else if (key === "icon") rows = iconInline(p) ? [iconRow(ctx, S, fam)].filter((r): r is LabelRow => !!r) : [];
+      rows = artistRows(ctx, p, S1, gGap, maxW, fam);
+    } else if (key === "stage") rows = wrapRows(ctx, words(p.stage, hasArtist), hasArtist ? STYLE_SMALL : STYLE_BIG, S1, gGap, maxW, fam);
+    else if (key === "icon") rows = iconInline(p) ? [iconRow(ctx, S1, fam)].filter((r): r is LabelRow => !!r) : [];
     else if (isInfoKey(key)) {
       const lim = infoWidthOf(p, key);
       const row = paragraphRow(ctx, p[key], Math.max(INFO_SIZE_MIN, Math.min(INFO_SIZE_MAX, infoSizeOf(p, key))), S, lim > 0 ? Math.min(W, lim * W) : maxW, fam);
@@ -2306,7 +2311,7 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
   }
   const order = [...p.stack.filter((k) => items.has(k)), ...STACK_KEYS.filter((k) => items.has(k) && !p.stack.includes(k))];
   const stacked = order.filter((k) => p.free[k] === undefined);
-  const heightOf = (rows: LabelRow[]) => rows.reduce((a, r) => a + r.h, 0) + gap * (rows.length - 1);
+  const heightOf = (rows: LabelRow[]) => rows.reduce((a, r) => a + r.h, 0) + gGap * (rows.length - 1);
   const widthOf = (rows: LabelRow[]) => rows.reduce((a, r) => Math.max(a, r.w + 2 * Math.abs(r.shift)), 0);
   const nBlocks = order.reduce((a, k) => a + items.get(k)!.reduce((b, r) => b + r.blocks.length, 0), 0);
   let g = 0; // block index on the entrance clock, stack first then free blocks
@@ -2317,32 +2322,32 @@ function renderInner(ctx: CanvasRenderingContext2D, p: Params, scene: Scene, t: 
     specStacked = p.free[key] === undefined;
     for (const r of rows) {
       const base = g;
-      drawRow(ctx, r, centreX, yy, gap, (i) => blockProgress(scene, scene.artist, base + i, nBlocks, t), dirOf(50 + base), slide, colors, fam);
+      drawRow(ctx, r, centreX, yy, gGap, (i) => blockProgress(scene, scene.artist, base + i, nBlocks, t), dirOf(50 + base), slide, colors, fam);
       g += r.blocks.length;
-      yy += r.h + gap;
+      yy += r.h + gGap;
     }
     const w = widthOf(rows);
     out.blocks[key] = { x: centreX - w / 2, y: top, w, h: heightOf(rows) };
   };
   if (stacked.length) {
-    const gh = stacked.reduce((a, k) => a + heightOf(items.get(k)!), 0) + gap * (stacked.length - 1);
+    const gh = stacked.reduce((a, k) => a + heightOf(items.get(k)!), 0) + gGap * (stacked.length - 1);
     const gw = stacked.reduce((a, k) => Math.max(a, widthOf(items.get(k)!)), 0);
     const edge = clamp01(p.stackY) * H;
     const top = Math.max(0, Math.min(H - gh, p.stackAnchor === "top" ? edge : edge - gh));
     let yy = top;
     for (const key of stacked) {
       drawItem(key, yy, cx);
-      yy += heightOf(items.get(key)!) + gap;
+      yy += heightOf(items.get(key)!) + gGap;
     }
     out.stackRect = { x: cx - gw / 2, y: top, w: gw, h: gh };
   }
   // free blocks: on their own, or snapped together as a group around one centre
   for (const members of freeGroups(p, (k) => items.has(k))) {
-    const gh = members.reduce((a, k) => a + heightOf(items.get(k)!), 0) + gap * (members.length - 1);
+    const gh = members.reduce((a, k) => a + heightOf(items.get(k)!), 0) + gGap * (members.length - 1);
     let yy = clamp01(p.free[members[0]]!) * H - gh / 2;
     for (const key of members) {
       drawItem(key, yy, cx);
-      yy += heightOf(items.get(key)!) + gap;
+      yy += heightOf(items.get(key)!) + gGap;
     }
   }
   ctx.restore();

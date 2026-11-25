@@ -1019,7 +1019,7 @@ const TEXT_ROWS: Record<string, number[]> = {
   stageRow: [1, 3],
   lockupRow: [1],
   labelPosRow: [1],
-  typeSizeRow: [1],
+  typeSizeRow: [1, 2, 3, 4, 5],
 };
 function syncVisibility() {
   const layout = params.layout;
@@ -2877,7 +2877,7 @@ const SHORTCUTS: [string, [string, string][]][] = [
     [
       ["Lockup", "Stage or day under the artist name (preset 1)"],
       ["Position", "Snap the open card's text top, centre or bottom"],
-      ["Type size", "Small for long names or 1:1"],
+      ["Type size", "Small for long names or 1:1 (every preset)"],
       ["Safe zone", "9:16: keep the logo clear of Instagram's story bars"],
       ["Export Figma", "Copies the card; in the Figma plugin it is Send to Figma and builds the layers"],
     ],
